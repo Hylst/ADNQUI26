@@ -1,0 +1,4 @@
+QUIZZ CONTROLS :
+SPACE : Display unscrambled picture / Display track title
+RETURN : Next track
+BACKSPACE : Previous track
