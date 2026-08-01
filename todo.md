@@ -41,7 +41,7 @@ boucle de lectures de table sans une seule multiplication.
 ligne d'une rangée de blocs construite, un `BMOVE` de 160 octets la recopie sur les
 `taille&-1` lignes suivantes. Pas de calcul par pixel du tout.
 
-### 1.2 `@tatouche` appelé dans la boucle la plus interne
+### 1.2 `@tatouche` appelé dans la boucle la plus interne — ✅ FAIT (`ADNQ26V`)
 
 `@tatouche` (test clavier) est appelé à **quatre niveaux d'imbrication**, jusque
 dans la boucle `i&`. À ~4500 itérations par cycle, l'appel de procédure seul pèse
@@ -49,6 +49,9 @@ plus que le travail utile.
 
 Le remonter **une fois par ligne de blocs** suffit largement : la réactivité au
 clavier reste imperceptiblement différente pour l'utilisateur.
+
+**Appliqué** : les appels des boucles `i&` et `j&` sont retirés ; il subsiste au
+niveau de la boucle `x&`. Reste le poste principal, §1.1, non traité.
 
 ### 1.3 Le calcul de `taille&` fait une puissance et deux divisions
 

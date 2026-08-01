@@ -11,7 +11,7 @@ Légende : ✅ fonctionne · ⚠️ fonctionne avec réserve · 🔬 modifié, n
 | Apparition progressive de l'image (pixellisation, scrambling) | ✅ | |
 | Affichage du texte réponse (artiste / titre) | ⚠️ | Lisible seulement si la palette de l'image s'y prête — c'est le sujet ouvert ci-dessous. |
 | Contrôle clavier (Espace / Entrée / Backspace) | ✅ | |
-| Fondus de palette (`fadeon` / `fadeoff`) | ✅ | |
+| Fondus de palette (`fadeon` / `fadeoff`) | 🔬 | Trois défauts corrigés dans `ADNQ26V`, voir ci-dessous. |
 | Écran d'intro, écran final « fireworks » | ✅ | |
 
 ## Le sujet ouvert : contraste du texte
@@ -128,6 +128,41 @@ les reprendre :
 | `stab` alterne les tampons, l'un serait en retard | **Faux.** Les deux états finaux sont complets. |
 | `choix 2` au lieu de `choix 0` | **Hors de cause** : les deux donnent 12 sur l'image 01. |
 
+### Fondus de palette — trois défauts corrigés (`ADNQ26V`)
+
+**1. Le fondu ne retombait jamais sur la palette de l'image.** `fadeon` et
+`fadeoff` décodaient avec `AND 7`, ce qui jette le 4ᵉ bit des composantes STE.
+Vérifié sur l'image 01 :
+
+```
+couleur 12 : image $0EC5  ->  l'ancien fondu finissait sur $0645
+couleur 15 : image $0F77  ->  l'ancien fondu finissait sur $0777
+```
+
+À la fin de chaque montée, la palette réelle était ensuite rétablie ailleurs
+(`~XBIOS(6,L:pal%)`), d'où un **saut de couleur systématique**. Le décodage STE
+corrige cela : la dernière étape tombe désormais **exactement** sur la palette de
+l'image (vérifié sur les 16 couleurs), et la rampe passe de 8 à **16 niveaux**
+(0, 2, 4, 6, 9, 11, 13, 15 — monotone).
+
+**2. Le flash blanc.** L'expression `x-(x/7)*it&` passe par le flottant et doit
+rendre 0 à la première étape ; elle peut rendre une valeur infime négative. Un
+`cr&` à −1 devient `$FFFF`, et `SHL(cr&,8)` allume alors des bits **dans les
+quartets voisins** → blanc. `@clampcol` borne désormais les trois composantes
+à 0–15 avant l'encodage.
+
+> Cause **plausible et désormais neutralisée**, pas formellement prouvée : elle
+> dépend de la façon dont GFA convertit un flottant en entier.
+
+**3. `cv&` et `cb&` n'étaient pas initialisés** dans les branches `ty&=0` et
+`ty&=1` de `fadeon`. Ce sont des variables **globales** : elles gardaient la
+valeur laissée par le fondu précédent. En pratique `fadeoff` les laissait à 0,
+donc le défaut était masqué — mais le résultat dépendait de l'appel antérieur.
+Les trois composantes sont maintenant affectées dans chaque branche.
+
+Le nouvel encodage reste correct sur **STF** : le matériel y ignore le bit 3 de
+chaque quartet, donc il lit les 3 bits de poids fort, soit la bonne valeur.
+
 ### File d'attente des cycles de test
 
 | Version | Contenu | À vérifier |
@@ -136,6 +171,8 @@ les reprendre :
 | `ADNQ26R` | `Q` + correctif mémoire (une seule origine `log%`) | La musique se joue-t-elle ? Le programme démarre-t-il toujours ? |
 | `ADNQ26S` | `R` + lecture correcte de la palette STE | Couleurs cohérentes (encre 15, bandeau 0) ✅, mais glyphes toujours troués. |
 | `ADNQ26T` | `S` + `recolor_font` sans appel de FUNCTION | ✅ **Testé : glyphes nets, texte lisible.** |
+| `ADNQ26U` | modifications utilisateur (`$m 450000`, crédits) | ✅ compilé |
+| `ADNQ26V` | `U` + fondus STE + bornage + `@tatouche` hors boucles internes + `MUL` supprimée | **Le fondu est-il enfin régulier, sans flash ?** |
 
 Si `Q` échoue, **rebaser `R`** sur la version qui tourne au lieu de le tester tel quel.
 
