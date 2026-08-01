@@ -145,14 +145,38 @@ corrige cela : la dernière étape tombe désormais **exactement** sur la palett
 l'image (vérifié sur les 16 couleurs), et la rampe passe de 8 à **16 niveaux**
 (0, 2, 4, 6, 9, 11, 13, 15 — monotone).
 
-**2. Le flash blanc.** L'expression `x-(x/7)*it&` passe par le flottant et doit
-rendre 0 à la première étape ; elle peut rendre une valeur infime négative. Un
-`cr&` à −1 devient `$FFFF`, et `SHL(cr&,8)` allume alors des bits **dans les
-quartets voisins** → blanc. `@clampcol` borne désormais les trois composantes
-à 0–15 avant l'encodage.
+**2. Le flash blanc — vraie cause (`ADNQ26X`).** Le fondu n'était pas une rampe
+de luminosité mais un **balayage de canaux** : la boucle `ty&` montait le rouge
+seul, puis le bleu, puis le vert.
 
-> Cause **plausible et désormais neutralisée**, pas formellement prouvée : elle
-> dépend de la façon dont GFA convertit un flottant en entier.
+| Phase | Ce qui monte | Écran |
+|---|---|---|
+| `ty&=0` | rouge seul | noir → **rouge** |
+| `ty&=1` | bleu | rouge → **magenta** |
+| `ty&=2` | vert | magenta → couleur complète |
+
+Le vert (poids perceptuel 0,59) arrivant en dernier sur un rouge et un bleu déjà
+pleins produisait une montée brutale vers le blanc. Luminosité moyenne des 16
+couleurs, trame par trame :
+
+```
+ANCIEN  : 0 0 1 1 2 2 2 3 3 3 3 3 3 3 3 3 3 4 4 5 5 6 6 7
+                          plateau de 9 trames    puis surge
+NOUVEAU : 0 0 0 0 1 1 1 2 2 2 2 3 3 3 4 4 4 4 5 5 5 6 6 6 7
+```
+
+Le palier correspond à la phase bleue, dont le poids n'est que 0,11 : l'œil ne
+voit presque rien bouger pendant 9 trames, puis tout arrive d'un coup.
+
+**Correction** : les trois composantes évoluent **ensemble**, 25 pas (0 à 24) pour
+conserver la durée d'origine. Rampe monotone, arrivée exacte sur la palette de
+l'image. Plus aucun flottant : `DIV(MUL(r&(ii&),i&),24)` — ~1 ms par pas dans une
+trame de 20 ms.
+
+> Une première tentative (bornage `@clampcol` contre un `cr&` négatif issu de
+> l'arithmétique flottante) **n'a pas suffi** : l'hypothèse était plausible mais
+> ce n'était pas la cause. Le bornage est conservé, il ne coûte rien et protège
+> l'encodage.
 
 **3. `cv&` et `cb&` n'étaient pas initialisés** dans les branches `ty&=0` et
 `ty&=1` de `fadeon`. Ce sont des variables **globales** : elles gardaient la
@@ -172,7 +196,8 @@ chaque quartet, donc il lit les 3 bits de poids fort, soit la bonne valeur.
 | `ADNQ26S` | `R` + lecture correcte de la palette STE | Couleurs cohérentes (encre 15, bandeau 0) ✅, mais glyphes toujours troués. |
 | `ADNQ26T` | `S` + `recolor_font` sans appel de FUNCTION | ✅ **Testé : glyphes nets, texte lisible.** |
 | `ADNQ26U` | modifications utilisateur (`$m 450000`, crédits) | ✅ compilé |
-| `ADNQ26V` | `U` + fondus STE + bornage + `@tatouche` hors boucles internes + `MUL` supprimée | **Le fondu est-il enfin régulier, sans flash ?** |
+| `ADNQ26V` | `U` + fondus STE + bornage + `@tatouche` hors boucles internes | ⚠️ Testé : couleurs correctes, **mais flash toujours présent**. |
+| `ADNQ26X` | `V` + fondu simultané des 3 composantes (suppression de la boucle `ty&`) | **Le fondu est-il enfin régulier ?** |
 
 Si `Q` échoue, **rebaser `R`** sur la version qui tourne au lieu de le tester tel quel.
 
