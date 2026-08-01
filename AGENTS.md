@@ -9,7 +9,7 @@ une ligne de code.
    version qui tourne (`ADNQ26WO.LST`). Le cycle de test est lent et coûteux pour
    l'utilisateur : un test qui valide deux changements ne valide rien.
 2. **Ne jamais écraser `ADNQ26WO.*`** — c'est le point de retour.
-   Faire une copie de sauvegarde avant d'éditer `ADNQU26Q.LST`.
+   Faire une copie de sauvegarde avant d'éditer `ADNQ26Q.LST`.
 3. **Vérifier avant d'affirmer.** Plusieurs erreurs passées viennent d'hypothèses
    non vérifiées sur `RC_COPY`, la table VDI ou `RESERVE`. Sources §Documentation.
 4. **Le manuel donne des règles générales que ce programme contredit
@@ -18,6 +18,24 @@ une ligne de code.
 5. **Approche pessimiste sur l'état des fichiers** : l'utilisateur édite en
    parallèle dans l'éditeur GFA. Relire le fichier avant d'éditer, ne pas se fier
    à une lecture antérieure dans la même session.
+
+## Noms de fichiers — 8.3 obligatoire
+
+GEMDOS impose **8 caractères maximum, extension 3 maximum, un seul point**.
+Le dossier étant monté comme disque par l'émulateur, la règle vaut pour **tout**
+fichier qu'on y crée, y compris la documentation.
+
+```
+ADNQ26Q.LST    ✔  7 + 3
+STRUCT.md      ✔  6 + 2
+STRUCTURE.md   ✗  9 caracteres
+ADNQ26Q.LST.avant-planfix   ✗  deux points, base et extension trop longues
+```
+
+Seule exception tolérée : `.gitignore`, exigé par git et jamais lu par le programme.
+
+**Ne pas créer de fichier de sauvegarde suffixé** (`*.avant-*`, `*.old`…) :
+c'est git qui tient ce rôle, et ces noms violent la règle.
 
 ## Contraintes d'édition du `.LST`
 

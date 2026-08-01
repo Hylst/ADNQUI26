@@ -45,11 +45,14 @@ Après chaque édition, vérifier :
 
 ```bash
 cd "/d/0CODE/ATARI24/0GFA/2026/ADNQUI26"
-diff ADNQU26Q.LST.avant-<motif> ADNQU26Q.LST    # le diff ne contient QUE l'intention
-python -X utf8 -c "b=open('ADNQU26Q.LST','rb').read(); \
+git diff -- ADNQ26Q.LST          # le diff ne doit contenir QUE l'intention
+python -X utf8 -c "b=open('ADNQ26Q.LST','rb').read(); \
 print('LF orphelins',b.count(b'\n')-b.count(b'\r\n')); \
 print('octets >127',sum(1 for x in b if x>127))"
 ```
+
+**Ne pas créer de fichier de sauvegarde** (`*.avant-*`, `*.old`…) : git joue ce
+rôle, et ces noms violent la règle 8.3 (cf. `AGENTS.md`). Committer avant d'éditer.
 
 Le compte d'octets > 127 doit rester à **41** (dégâts antérieurs, à ne pas aggraver).
 Les `>` en tête de certaines lignes `PROCEDURE` sont des marqueurs de pliage GFA

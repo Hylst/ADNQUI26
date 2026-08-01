@@ -30,14 +30,16 @@ il faut refaire le cycle complet : les trois fichiers ne sont plus cohérents en
 
 ## Versions
 
-Le projet avance par **fichiers suffixés** (`ADNQUI26` → `…26N` → `…26O` → `…26P` → `…26Q`).
+Le projet avance par **fichiers suffixés**. Les versions récentes suivent la forme
+courte `ADNQ26<lettre>` (7 caractères), imposée par la règle **8.3** de GEMDOS —
+les anciennes portent encore la forme longue `ADNQU26<lettre>`.
 Un dépôt git est initialisé sur `main`.
 
 - **`ADNQ26WO.*`** — copie de référence **qui tourne** (identique à `ADNQU26P`, MD5 vérifié).
   Ne jamais l'écraser : c'est le point de retour.
-- **`ADNQU26Q.*`** — **à tester maintenant** : correction des poids de plans de bits
+- **`ADNQ26Q.*`** — **à tester maintenant** : correction des poids de plans de bits
   et `test_color_contrast(2,…)`.
-- **`ADNQU26R.LST`** — **cycle suivant** : `Q` + correctif mémoire (double origine
+- **`ADNQ26R.LST`** — **cycle suivant** : `Q` + correctif mémoire (double origine
   des tampons). `.GFA` / `.PRG` restent à générer par le cycle de build.
 
 Les versions sont volontairement empilées une par cycle de test : si `Q` échoue,
@@ -49,7 +51,7 @@ Les versions sont volontairement empilées une par cycle de test : si `Q` échou
 |---|---|
 | [`AGENTS.md`](AGENTS.md) | **À lire en premier par tout agent.** Méthode de travail et pièges vérifiés. |
 | [`CLAUDE.md`](CLAUDE.md) | Spécificités Claude Code (base documentaire interrogeable). |
-| [`STRUCTURE.md`](STRUCTURE.md) | Carte mémoire, organisation du code, fichiers de données. |
+| [`STRUCT.md`](STRUCT.md) | Carte mémoire, organisation du code, fichiers de données. |
 | [`FEATURES.md`](FEATURES.md) | Fonctionnalités et leur état réel. |
 | [`continue.md`](continue.md) | Journal de la session de débogage du 2026-08-01 (historique détaillé). |
 

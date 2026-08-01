@@ -5,8 +5,8 @@
 | Fichier | Rôle |
 |---|---|
 | `ADNQ26WO.LST/.GFA/.PRG` | **Référence qui tourne.** Identique à `ADNQU26P`. Ne pas écraser. |
-| `ADNQU26Q.LST/.GFA/.PRG` | Développement — **cycle en cours** : plans de bits + `choix 2`. |
-| `ADNQU26R.LST` | `Q` + correctif mémoire — **cycle suivant**. `.GFA`/`.PRG` à générer. |
+| `ADNQ26Q.LST/.GFA/.PRG` | Développement — **cycle en cours** : plans de bits + `choix 2`. |
+| `ADNQ26R.LST` | `Q` + correctif mémoire — **cycle suivant**. `.GFA`/`.PRG` à générer. |
 | `ADNQUI26.*`, `…26N`, `…26O`, `…26P`, `…26W` | Versions antérieures, conservées. |
 | `*.BAK` | Sauvegardes de l'éditeur GFA. |
 | `GFABASIC.PRG` | Copie locale de l'interpréteur. |
@@ -64,7 +64,7 @@ taille des fichiers de base, plus 200000 pour la musique.
 > **Statut : hypothèse non testée.** Elle expliquerait le symptôme « pas de
 > musique » resté en suspens.
 >
-> **Le correctif existe dans `ADNQU26R.LST`** (une seule origine, `log%` partout) :
+> **Le correctif existe dans `ADNQ26R.LST`** (une seule origine, `log%` partout) :
 >
 > ```gfa
 > mem_block%=MALLOC(total_size%+256)   ! marge pour l'arrondi
