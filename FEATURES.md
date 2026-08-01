@@ -38,7 +38,7 @@ cellule 8×8 est **toujours le registre matériel 0**, imposé par le AND de
 |---|---|---|
 | `test_color_contrast` lit la palette dans `pal%` | ✅ | Plus rapide et indépendant du timing du fondu (avant : `XBIOS(7,…)`). |
 | Appel après chaque `ldpic` (intro, chaque morceau, finale) | ✅ | |
-| `recolor_font` repeint l'encre | 🔬 | Logique de `cptst`/`cpset` **recopiée dans la procédure** depuis `ADNQ26T` : plus d'appel de FUNCTION, plus de dépendance à `t160&()`. |
+| `recolor_font` repeint l'encre | ✅ | Logique de `cptst`/`cpset` **recopiée dans la procédure** depuis `ADNQ26T` : plus d'appel de FUNCTION, plus de dépendance à `t160&()`. |
 | Conversion VDI dans `area.lines.erase` | ✅ | `COLOR vdicol|(box_col&)` |
 | Poids des plans dans `cptst` / `cpset` | 🔬 | **Corrigé le 2026-08-01, non testé.** Voir ci-dessous. |
 | Choix `test_color_contrast(2,…)` au lieu de `(0,…)` | 🔬 | **Non testé.** Seul écart de code avec la version qui tourne, avant la correction des plans. |
@@ -90,8 +90,8 @@ deviennent cohérents — `ink_col&` = **15** (le plus clair) et `box_col&` = **
 
 Symptôme : texte net sur l'écran d'intro, lettres trouées dès le 1ᵉʳ morceau.
 
-**Cause.** `recolor_font` appelait `cptst`, une **FUNCTION** qui lit le tableau
-global `t160&()`. Or `t160&(200)` est dimensionné **dans `pmul160`**, pas dans les
+**Cause — hypothèse, non prouvée.** `recolor_font` appelait `cptst`, une
+**FUNCTION** qui lit le tableau global `t160&()`. Or `t160&(200)` est dimensionné **dans `pmul160`**, pas dans les
 `DIM` groupés de `hello` — le commentaire du code s'en méfiait déjà (« bugs with
 DIM in functions or procedures ?? »). C'est la cause d'`ERR 15` déjà documentée
 dans `continue.md` §6.2. Quand `t160&(y&)` rend une valeur erronée, `cptst` lit
@@ -112,6 +112,11 @@ au retour à la base P.
 
 Équivalence vérifiée par simulation : l'ancienne et la nouvelle logique donnent
 le même résultat exact (3580 pixels de fond, 1540 d'encre en couleur 15).
+**Testé sur machine : le texte est net.** ✅
+
+> ⚠️ Ce qui a réellement changé, c'est la **suppression de l'appel de FUNCTION
+> dans la boucle**. L'implication de `t160&()` reste une supposition — voir
+> `todo.md` §4 pour la vérification qui trancherait.
 
 **Quatre hypothèses ont été vérifiées et écartées en chemin** — utile pour ne pas
 les reprendre :
@@ -130,7 +135,7 @@ les reprendre :
 | `ADNQ26Q` | Poids de plans corrigés + `test_color_contrast(2,…)` | Le texte est-il lisible sur les 30 images, en particulier le morceau 3 (le pire cas : texte noir sur fond noir) ? |
 | `ADNQ26R` | `Q` + correctif mémoire (une seule origine `log%`) | La musique se joue-t-elle ? Le programme démarre-t-il toujours ? |
 | `ADNQ26S` | `R` + lecture correcte de la palette STE | Couleurs cohérentes (encre 15, bandeau 0) ✅, mais glyphes toujours troués. |
-| `ADNQ26T` | `S` + `recolor_font` sans appel de FUNCTION | **Les glyphes sont-ils enfin nets sur les morceaux ?** |
+| `ADNQ26T` | `S` + `recolor_font` sans appel de FUNCTION | ✅ **Testé : glyphes nets, texte lisible.** |
 
 Si `Q` échoue, **rebaser `R`** sur la version qui tourne au lieu de le tester tel quel.
 

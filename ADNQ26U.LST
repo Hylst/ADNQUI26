@@ -1,11 +1,11 @@
 ' ADN QUIZZ - GUESS TITLE FROM MUSIC
-' HYLST + TOMCHI HEAVY DEBUG
+' HYLST + DEBUG : TOMCHI & DMA SC
 ' affichage test clipp�,auto centre,font mono (avec possib de det couleur optimale visib) ou couleur, outline software possible
 ' So many strange errors
 ' Retropedalage, trop de bugs, rappel version de base
 ' Modifs faciles en cas de prob de contraste pour la police avec rc copy mode
 ' Checklist : UnPixelate, Scrambling, Fadeon/off, Sndh player renew, file loading, text display
-$m 400000 ! memory need for the program 2 be compiled arrays & strings - OR RESERVE...
+$m 450000 ! memory need for the program 2 be compiled arrays & strings - OR RESERVE...
 .
 .
 chk$="hello"
@@ -193,7 +193,7 @@ RETURN
 RETURN
 .
 ' !>
-> PROCEDURE intro_quizz
+PROCEDURE intro_quizz
   display.bitmap.txt("BIENVENUE AU QUIZZ MUSICAL ADN 2026",20,10,TRUE,TRUE,FALSE)
   display.bitmap.txt("PRET A DEVINER ?",64,135,TRUE,TRUE,FALSE)
   display.bitmap.txt("OUVREZ GRAND VOS OREILLES !",80,150,TRUE,TRUE,FALSE)
@@ -202,7 +202,7 @@ RETURN
 RETURN
 .
 ' !>
-> PROCEDURE quizz
+PROCEDURE quizz
   ' WIP
   ' Etapes avec passage controle clavier  (SPACE>STEP - ENTER>NEXT TUNE - BACKSPACE>PREVIOUS TUNE):
   ' 1) juste la musique sans image
@@ -274,7 +274,7 @@ RETURN
   display.bitmap.txt("QUIZZ TRACKS BY:  AD  AND  DMA SC",20,130,TRUE,TRUE,FALSE)
   display.bitmap.txt("INTRO MUSIC BY:  JESS",20,145,TRUE,TRUE,FALSE)
   display.bitmap.txt("THIS MUSIC BY:  AD",20,160,TRUE,TRUE,FALSE)
-  display.bitmap.txt("FONT BY:  ST SURVIVOR",20,175,TRUE,TRUE,FALSE)
+  display.bitmap.txt("FONT BY:  HYLST",20,175,TRUE,TRUE,FALSE)
   REPEAT
     matouche&=BYTE{&HFFFC02}
     VSYNC
@@ -290,7 +290,7 @@ RETURN
 RETURN
 .
 ' !>
-> PROCEDURE bye
+PROCEDURE bye
   @dboff
   ~XBIOS(6,L:savpal%) ! restore pal
   BYTE{&H484}=key|    ! restore keyboard
@@ -1025,9 +1025,8 @@ PROCEDURE recolor_font(couleur&)
   ' Les morceaux demandent la couleur 15, qui exige d'allumer trois plans
   ' vides : le defaut n'y est plus masque.
   LOCAL x&,y&,lig%,adr%,mask&,notmask&
-  ' lig% avance par addition : MULS coute ~70 cycles sur 68000, ADD en coute 8.
-  lig%=font%
   FOR y&=0 TO char.height&*2-1
+    lig%=font%+MUL(y&,160)
     FOR x&=0 TO 320-1
       adr%=lig%+SHL&(SHR&(x&,4),3)
       mask&=SHL&(1,15-AND(x&,15))
@@ -1056,7 +1055,6 @@ PROCEDURE recolor_font(couleur&)
         ENDIF
       ENDIF
     NEXT x&
-    ADD lig%,160
   NEXT y&
 RETURN
 '
