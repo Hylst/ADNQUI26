@@ -187,6 +187,36 @@ Les trois composantes sont maintenant affectées dans chaque branche.
 Le nouvel encodage reste correct sur **STF** : le matériel y ignore le bit 3 de
 chaque quartet, donc il lit les 3 bits de poids fort, soit la bonne valeur.
 
+### Flash résiduel — le registre 0 (`ADNQ26Y`)
+
+`fadeon` est appelé juste après `RC_COPY log%,… TO log%,0,0,0` : l'écran est alors
+**entièrement en couleur 0**, et `pixelisation` ne dessine l'image qu'ensuite.
+Faire monter le registre 0 revient donc à laver tout l'écran de la couleur de fond
+de l'image. Mesuré sur les 33 images :
+
+| Image | Registre 0 | Luminosité |
+|---|---|---|
+| `10.PI1` | RGB(7,3,2) | 4,09 — flash net |
+| `29.PI1`, `08.PI1` | — | 3,9 / 3,2 |
+| `03`, `07`, `20.PI1` | RGB(0,0,0) | 0,00 — aucun flash |
+
+D'où le « seulement certaines images ». `fadeon` ramène désormais les registres
+**1 à 15** seulement ; le registre 0 est monté par `@fadereg0` **après**
+`pixelisation`, quand l'image occupe déjà l'écran — seules les zones de fond
+s'éclaircissent alors.
+
+### Rampe : arrondi au lieu de troncature (`ADNQ26Y`)
+
+`DIV(MUL(r&,i&),24)` tronquait : une composante de valeur 2 restait à 0 jusqu'au
+pas 12, puis rattrapait d'un coup. D'où un début qui paraissait lent et une fin
+rapide. Avec `DIV(ADD(MUL(r&,i&),12),24)` :
+
+| Mesure | Troncature | Arrondi |
+|---|---|---|
+| 1ᵉʳ mouvement d'une composante faible | pas 12 | **pas 6** |
+| Régularité des paliers (écart-type) | 0,203 | **0,100** |
+| Dernier saut de la rampe | 1,0 | **0,1** |
+
 ### File d'attente des cycles de test
 
 | Version | Contenu | À vérifier |
@@ -197,7 +227,8 @@ chaque quartet, donc il lit les 3 bits de poids fort, soit la bonne valeur.
 | `ADNQ26T` | `S` + `recolor_font` sans appel de FUNCTION | ✅ **Testé : glyphes nets, texte lisible.** |
 | `ADNQ26U` | modifications utilisateur (`$m 450000`, crédits) | ✅ compilé |
 | `ADNQ26V` | `U` + fondus STE + bornage + `@tatouche` hors boucles internes | ⚠️ Testé : couleurs correctes, **mais flash toujours présent**. |
-| `ADNQ26X` | `V` + fondu simultané des 3 composantes (suppression de la boucle `ty&`) | **Le fondu est-il enfin régulier ?** |
+| `ADNQ26X` | `V` + fondu simultané des 3 composantes | ⚠️ Testé : plus doux, mais lent au début / rapide à la fin, et flash résiduel sur certaines images. |
+| `ADNQ26Y` | `X` + arrondi de la rampe + registre 0 monté après `pixelisation` | **Le fondu est-il régulier et sans flash ?** |
 
 Si `Q` échoue, **rebaser `R`** sur la version qui tourne au lieu de le tester tel quel.
 

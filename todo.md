@@ -156,3 +156,82 @@ lui-même qui pose problème.
 
 Sans enjeu tant que la version actuelle tient — mais à ne pas oublier avant
 d'utiliser `cptst`/`cpset` ailleurs dans le programme.
+
+---
+
+## 5. Fondus — réglages restants
+
+### 5.1 Courbe gamma (si la rampe paraît encore inégale)
+
+La rampe est linéaire en valeur de palette. La perception étant à peu près
+logarithmique, une courbe légère peut aider. Table prête à coller, à lire une
+fois au démarrage dans `hello` :
+
+```gfa
+DIM fade.step&(24)
+RESTORE fade.ramp
+FOR i&=0 TO 24
+  READ fade.step&(i&)
+NEXT i&
+fade.ramp:
+DATA 0,3,5,7,8,10,11,12,13,14,15,16,17,18,19,20,21,21,22,23,23,24,24,24,24
+```
+
+Puis dans les fondus, remplacer `i&` par `fade.step&(i&)` dans les trois lignes
+de calcul. Mettre `DATA 0,1,2,3,…,24` redonne exactement le comportement actuel :
+le réglage se fait donc sans toucher au code.
+
+### 5.2 Durée
+
+25 paliers à un `VSYNC` = 0,5 s. Pour un fondu plus lent, doubler le `VSYNC`
+plutôt que le nombre de paliers : la palette n'a que 16 niveaux par composante,
+au-delà les paliers supplémentaires ne changent rien visuellement.
+
+### 5.3 `fadeoff` inclut le registre 0, `fadeon` non
+
+C'est volontaire et asymétrique : à l'extinction on veut que **tout** s'éteigne,
+y compris le fond ; à l'allumage le registre 0 est monté séparément par
+`@fadereg0`, une fois l'image dessinée. Ne pas « corriger » cette asymétrie sans
+relire §5.4.
+
+### 5.4 Le registre 0 pendant `screen.opening`
+
+`screen.opening` fait `~XBIOS(6,L:pal%)` — la palette entière d'un coup, sans
+fondu. C'est le chemin de l'intro, où cela ne gêne pas. Si l'effet devait être
+réutilisé sur les morceaux, il faudrait le passer en fondu comme le reste.
+
+---
+
+## 6. Autres pistes d'effets et transitions
+
+### 6.1 Transitions alternatives, à coût comparable
+
+- **Volet horizontal ou vertical** : `BMOVE` de lignes depuis `pic%` vers `log%`,
+  une ou deux par trame. Quasi gratuit, très lisible à l'écran.
+- **Fondu entrelacé** : afficher d'abord les lignes paires, puis les impaires.
+  Deux `BMOVE` par trame, effet de « montée en résolution ».
+- **Ouverture en bandes** depuis le centre : `screen.opening` fait déjà quelque
+  chose de proche, le code est réutilisable.
+- **Fondu croisé entre deux images** : impossible en palette indexée sans
+  recalculer les pixels — à écarter.
+
+### 6.2 Le rideau du texte
+
+`display.bitmap.txt` fait 8 `RC_COPY` par caractère (les 8 états du masque) plus
+un `stab` par état, soit **16 changements d'écran par caractère**. Pour une ligne
+de 30 caractères, cela fait 480 trames — c'est ce qui rend l'affichage du texte
+lent. Deux pistes :
+- dessiner **tous** les caractères à l'état *n* avant de passer à l'état *n+1*
+  (le rideau devient global au lieu d'être lettre par lettre) : 8 trames au lieu
+  de 480, et l'effet est plus élégant ;
+- ou garder l'effet lettre par lettre mais sans `stab` intermédiaire.
+
+### 6.3 Optimisations générales
+
+- **`t160&()` est un tableau de mots** : `CARD{t160&(y&)}` force une extension de
+  signe. Un tableau de longs (`t160%()`) éviterait la conversion à chaque accès.
+- **`DIV` et `MUL` dans les fondus** : ~1 ms par palier, négligeable. Ne pas
+  optimiser ici, le gain serait invisible.
+- **`RC_COPY` plein écran pour effacer** (`RC_COPY log%,0,0,320,200 TO log%,0,0,0`)
+  : un `BMOVE` depuis un buffer noir, ou un remplissage direct, serait plus rapide.
+- Le vrai poste reste **§1.1**, la pixelisation.
