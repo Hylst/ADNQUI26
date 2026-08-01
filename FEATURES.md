@@ -16,10 +16,14 @@ Légende : ✅ fonctionne · ⚠️ fonctionne avec réserve · 🔬 modifié, n
 
 ## Le sujet ouvert : contraste du texte
 
-**Le problème.** `DATA\FONT.INL` est une fonte bitmap 8×8 **monochrome**, dessinée
-uniquement avec l'index **15**. Chaque `.PI1` embarque sa propre palette, donc le
-registre 15 a un RVB différent à chaque image : parfois lisible, parfois
+**Le problème.** `DATA\FONT.INL` est une fonte bitmap 8×8 à **deux couleurs**
+seulement : l'index **0** (fond, 3580 pixels) et l'index **2** (encre, 1540 pixels)
+— vérifié en décodant le fichier. Chaque `.PI1` embarque sa propre palette, donc
+le registre 2 a un RVB différent à chaque image : parfois lisible, parfois
 illisible (typiquement sombre sur sombre).
+
+> ⚠️ `continue.md` §2 affirme « index 15 » et le commentaire du bloc `DATA`
+> annonce « 4 colours » : **les deux sont faux**. Se fier au fichier.
 
 **Contrainte posée par l'utilisateur** : ne pas modifier les images, et ne pas
 sacrifier 2 des 16 couleurs — cela dégraderait le rendu.
@@ -53,8 +57,8 @@ passe un **vrai numéro de registre**, qui se retrouvait donc peint **bit-invers
 | 4 | 2 |
 | 0, 6, 9, 15 | inchangées (palindromes binaires) |
 
-D'où le fait que le problème soit apparu **au moment où la recoloration a été
-introduite** : la fonte d'origine était en 15, seule valeur usuelle invariante.
+L'encre d'origine étant la couleur **2**, elle était repeinte en **4** au lieu de
+la couleur demandée : le correctif de contraste ne pouvait donc pas fonctionner.
 
 Tant que ce défaut était présent, tester `choix 2` ne pouvait rien démontrer —
 la couleur choisie était brouillée avant d'être appliquée.
