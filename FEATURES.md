@@ -229,7 +229,8 @@ rapide. Avec `DIV(ADD(MUL(r&,i&),12),24)` :
 | `ADNQ26V` | `U` + fondus STE + bornage + `@tatouche` hors boucles internes | ⚠️ Testé : couleurs correctes, **mais flash toujours présent**. |
 | `ADNQ26X` | `V` + fondu simultané des 3 composantes | ⚠️ Testé : plus doux, mais lent au début / rapide à la fin, et flash résiduel sur certaines images. |
 | `ADNQ26Y` | `X` + arrondi de la rampe + registre 0 monté après `pixelisation` | ✅ à valider |
-| `ADNQ26Z` | `Y` + `pixdraw` par plans de bits, durée pilotée, rideau de texte global | **La révélation tient-elle 2 min sans à-coups ? Le texte s'affiche-t-il d'un bloc ?** |
+| `ADNQ26Z` | `Y` + `pixdraw` par plans de bits, durée pilotée, rideau de texte global | ⚠️ Testé : 5 niveaux tenus 24 s — **trop peu d'étapes, rien ne bouge pendant longtemps**. |
+| `ADNQ27A` | `Z` + 9 niveaux (paliers rectangulaires) × 8 bandes = 72 étapes | **Une modification toutes les 1,7 s : est-ce le bon rythme ?** |
 
 Si `Q` échoue, **rebaser `R`** sur la version qui tourne au lieu de le tester tel quel.
 

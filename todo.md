@@ -273,13 +273,29 @@ ELSE
 ENDIF
 ```
 
-### Réglage de la durée
+### Réglage de la durée et de la granularité
 
 `pix.duree&` est défini dans `hello` : **6000 trames = 120 s** à 50 Hz.
-Cinq niveaux (16, 8, 4, 2, 1 pixels) tenus 24 s chacun. Pour plus de paliers,
-ajouter des tailles intermédiaires demanderait un `pixdraw` gérant des blocs
-non puissances de deux — la réplication par table ne s'y prête pas. Préférer
-jouer sur `pix.duree&` et sur l'alternance des effets.
+
+**9 niveaux × 8 bandes = 72 étapes visibles**, soit une modification à l'écran
+toutes les **1,7 s**. La première version n'avait que 5 niveaux tenus 24 s : rien
+ne bougeait pendant très longtemps.
+
+Ce qui a permis de passer de 5 à 9 niveaux : la taille **verticale** des blocs
+n'est pas contrainte aux puissances de deux — c'est seulement le nombre de lignes
+répliquées par `BMOVE`. Seule la taille **horizontale** dépend des tables. D'où
+des paliers rectangulaires intercalés :
+
+```
+16x16 -> 16x8 -> 8x8 -> 8x4 -> 4x4 -> 4x2 -> 2x2 -> 2x1 -> 1x1
+```
+
+Pour aller plus loin : augmenter le nombre de bandes (`bande&=0 TO 7` et le 72
+de `tenue&`) donne des étapes plus rapprochées sans toucher aux niveaux. Une
+bande fait 25 lignes ; 10 bandes de 20 lignes donneraient 90 étapes.
+
+La table des niveaux est dans `@pixinit` (`DATA 16,16,16,8,…`) : ajouter des
+paliers ne demande que d'allonger cette ligne et d'ajuster les bornes.
 
 ### Feu d'artifice
 
