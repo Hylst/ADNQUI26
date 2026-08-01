@@ -45,11 +45,6 @@ chk$="quizz"
   '
   ' ***********************************************************************************************
   compiled!=BYTE{BASEPAGE+256}<>96  ! false=interpreted/true=compiled
-  ' NE PAS remettre le IF NOT compiled! autour de RESERVE :
-  ' RESERVE libere la memoire au dela de 400000 vers GEMDOS, et le
-  ' MALLOC juste en dessous (environ 488000) depend de cette liberation.
-  ' Sans RESERVE en compile, le MALLOC echoue et on tombe dans EDIT
-  ' donc sortie immediate, ecran noir.
   ' IF NOT compiled!
   RESERVE 400000! 65536 ! if interpreted
   ' ENDIF
@@ -792,23 +787,17 @@ FUNCTION cptst(x&,y&,adr_scr%)
   bitpos&=15-AND(x&,15)
   mask&=SHL&(1,bitpos&)
   col&=0
-  ' Plan 0 = 1er mot = bit de POIDS FAIBLE (LSB). Les poids etaient inverses
-  ' (plan 0 -> 8), ce qui rendait cptst/cpset coherents entre eux pour une
-  ' recopie de pixel, mais faux des qu on leur passe un vrai numero de
-  ' registre : recolor_font(ink_col&) peignait la fonte en bit-inverse
-  ' (1->8, 2->4, 4->2). Seuls 0, 6, 9 et 15 etaient invariants - d ou une
-  ' fonte d origine en 15 qui semblait correcte.
   IF (CARD{adr_ligne%} AND mask&)
-    col&=col& OR 1
+    col&=col& OR 8
   ENDIF
   IF (CARD{adr_ligne%+2} AND mask&)
-    col&=col& OR 2
-  ENDIF
-  IF (CARD{adr_ligne%+4} AND mask&)
     col&=col& OR 4
   ENDIF
+  IF (CARD{adr_ligne%+4} AND mask&)
+    col&=col& OR 2
+  ENDIF
   IF (CARD{adr_ligne%+6} AND mask&)
-    col&=col& OR 8
+    col&=col& OR 1
   ENDIF
   RETURN col&
 ENDFUNC
@@ -818,14 +807,7 @@ PROCEDURE cpset(x&,y&,adr_scr%,color|)
   adr_ligne%=adr_scr%+t160&(y&)+SHL&(SHR&(x&,4),3)
   mask&=SHL&(1,15-AND(x&,15))
   notmask&=NOT mask&
-  ' Meme correction de poids que dans cptst : plan 0 = LSB (voir commentaire la-bas).
-  IF (color| AND 1)
-    CARD{adr_ligne%}=CARD{adr_ligne%} OR mask&
-  ELSE
-    CARD{adr_ligne%}=CARD{adr_ligne%} AND notmask&
-  ENDIF
-  ADD adr_ligne%,2
-  IF (color| AND 2)
+  IF (color| AND 8)
     CARD{adr_ligne%}=CARD{adr_ligne%} OR mask&
   ELSE
     CARD{adr_ligne%}=CARD{adr_ligne%} AND notmask&
@@ -837,7 +819,13 @@ PROCEDURE cpset(x&,y&,adr_scr%,color|)
     CARD{adr_ligne%}=CARD{adr_ligne%} AND notmask&
   ENDIF
   ADD adr_ligne%,2
-  IF (color| AND 8)
+  IF (color| AND 2)
+    CARD{adr_ligne%}=CARD{adr_ligne%} OR mask&
+  ELSE
+    CARD{adr_ligne%}=CARD{adr_ligne%} AND notmask&
+  ENDIF
+  ADD adr_ligne%,2
+  IF (color| AND 1)
     CARD{adr_ligne%}=CARD{adr_ligne%} OR mask&
   ELSE
     CARD{adr_ligne%}=CARD{adr_ligne%} AND notmask&
@@ -994,15 +982,11 @@ PROCEDURE recolor_font(couleur&)
 RETURN
 '
 PROCEDURE set_text_colors
-  ' recalcule ink_col& et box_col& a partir de la palette pal% de
-  ' l image qui vient d etre chargee, puis recolore la fonte
-  ' choix 2 (et non 0) : le fond a l interieur de chaque lettre est
-  ' toujours le registre 0, force par le ET logique de RC_COPY. On
-  ' prend donc la couleur la plus contrastee avec CE registre, pas la
-  ' plus claire dans l absolu, qui peut rester proche du fond sur une
-  ' image sombre.
-  chk$="set_text_colors:contrast2"
-  test_color_contrast(2,ink_col&)
+  ' recalcule ink_col& (couleur la plus claire) et box_col& (la plus
+  ' sombre) a partir de la palette pal% de l'image qui vient d'etre
+  ' chargee, puis recolore la fonte avec ink_col&
+  chk$="set_text_colors:contrast0"
+  test_color_contrast(0,ink_col&)
   chk$="set_text_colors:contrast1"
   test_color_contrast(1,box_col&)
   chk$="set_text_colors:recolor"
