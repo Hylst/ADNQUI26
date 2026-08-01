@@ -5,7 +5,15 @@
 L'effet fonctionne mais il est très lent. Voici ce que le code fait aujourd'hui,
 et ce qui coûte cher — par ordre de gain décroissant.
 
-### 1.1 Le coût réel : un `RC_COPY` par bloc de 4×4
+### 1.1 Le coût réel : un `RC_COPY` par bloc de 4×4 — ✅ FAIT (`ADNQ26Z`)
+
+> ⚠️ **Ma formulation initiale était fausse.** Je présentais la lenteur comme le
+> défaut à corriger. En réalité **la durée est la fonctionnalité** : la révélation
+> doit s'étaler jusqu'à 2 minutes pour laisser deviner les joueurs. Ce qu'il
+> fallait corriger, c'est que la durée était subie (elle dépendait de la lenteur
+> du dessin) au lieu d'être pilotée. `ADNQ26Z` sépare les deux : `@pixdraw`
+> dessine vite, `@pixelisation(duree&)` tient chaque niveau le temps voulu.
+
 
 ```gfa
 FOR j&=0 TO bloc_h&-1 STEP 4
@@ -215,7 +223,7 @@ réutilisé sur les morceaux, il faudrait le passer en fondu comme le reste.
 - **Fondu croisé entre deux images** : impossible en palette indexée sans
   recalculer les pixels — à écarter.
 
-### 6.2 Le rideau du texte
+### 6.2 Le rideau du texte — ✅ FAIT (`ADNQ26Z`)
 
 `display.bitmap.txt` fait 8 `RC_COPY` par caractère (les 8 états du masque) plus
 un `stab` par état, soit **16 changements d'écran par caractère**. Pour une ligne
@@ -235,3 +243,47 @@ lent. Deux pistes :
 - **`RC_COPY` plein écran pour effacer** (`RC_COPY log%,0,0,320,200 TO log%,0,0,0`)
   : un `BMOVE` depuis un buffer noir, ou un remplissage direct, serait plus rapide.
 - Le vrai poste reste **§1.1**, la pixelisation.
+
+
+---
+
+## 7. Suite — alternance des effets de révélation
+
+`@scrambling` était appelé **depuis** `pixelisation` ; il est désormais appelé
+depuis `quizz`, à côté de `@pixelisation`. Les effets sont donc réordonnables
+sans toucher aux procédures.
+
+Pour vraiment alterner d'un morceau à l'autre, il reste à **donner à chaque effet
+la même interface de durée** que `pixelisation(duree&)` :
+
+| Effet | État | À faire |
+|---|---|---|
+| `pixelisation` | ✅ | pilotée par `duree&`, 5 niveaux tenus |
+| `scrambling` | ⬜ | `maxcycle&=20` en dur ; lui passer `duree&` et tenir chaque cycle |
+| `random_pixels` | ⬜ | procédure présente mais jamais appelée — à évaluer |
+| Volet / entrelacement | ⬜ | non écrits, cf. §6.1 |
+
+Une fois toutes les procédures alignées, un simple sélecteur dans `quizz` suffit :
+
+```gfa
+IF EVEN(file&)
+  @pixelisation(pix.duree&)
+ELSE
+  @scrambling(pix.duree&)
+ENDIF
+```
+
+### Réglage de la durée
+
+`pix.duree&` est défini dans `hello` : **6000 trames = 120 s** à 50 Hz.
+Cinq niveaux (16, 8, 4, 2, 1 pixels) tenus 24 s chacun. Pour plus de paliers,
+ajouter des tailles intermédiaires demanderait un `pixdraw` gérant des blocs
+non puissances de deux — la réplication par table ne s'y prête pas. Préférer
+jouer sur `pix.duree&` et sur l'alternance des effets.
+
+### Feu d'artifice
+
+L'image finale `FIREWORK.PI1` est aujourd'hui affichée telle quelle. L'idée d'en
+faire un effet de démo plutôt qu'une image fixe est notée pour la prochaine
+version — les briques existent déjà : `@pixdraw` pour les blocs, `@fadereg0` et
+les fondus pour la palette, `@scrambling` pour les lignes.

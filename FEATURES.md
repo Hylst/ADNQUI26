@@ -8,7 +8,7 @@ Légende : ✅ fonctionne · ⚠️ fonctionne avec réserve · 🔬 modifié, n
 |---|---|---|
 | Enchaînement des 30 morceaux | ✅ | |
 | Lecture musique SNDH | ⚠️ | « Pas de musique » signalé lors d'un test, jamais investigué. Vérifier d'abord la config audio de Steem SSE (YM/DMA, volume). **Piste sérieuse** : le début de `sndhplay%` (186 octets) peut être écrasé par la fin de `pic%` — correctif dans `ADNQ26R.LST`, cf. `STRUCT.md`. |
-| Apparition progressive de l'image (pixellisation, scrambling) | ✅ | |
+| Apparition progressive de l'image (pixellisation, scrambling) | 🔬 | Réécrite dans `ADNQ26Z` : dessin par plans de bits, durée pilotée (`pix.duree&` = 6000 trames = 120 s). |
 | Affichage du texte réponse (artiste / titre) | ⚠️ | Lisible seulement si la palette de l'image s'y prête — c'est le sujet ouvert ci-dessous. |
 | Contrôle clavier (Espace / Entrée / Backspace) | ✅ | |
 | Fondus de palette (`fadeon` / `fadeoff`) | 🔬 | Trois défauts corrigés dans `ADNQ26V`, voir ci-dessous. |
@@ -228,7 +228,8 @@ rapide. Avec `DIV(ADD(MUL(r&,i&),12),24)` :
 | `ADNQ26U` | modifications utilisateur (`$m 450000`, crédits) | ✅ compilé |
 | `ADNQ26V` | `U` + fondus STE + bornage + `@tatouche` hors boucles internes | ⚠️ Testé : couleurs correctes, **mais flash toujours présent**. |
 | `ADNQ26X` | `V` + fondu simultané des 3 composantes | ⚠️ Testé : plus doux, mais lent au début / rapide à la fin, et flash résiduel sur certaines images. |
-| `ADNQ26Y` | `X` + arrondi de la rampe + registre 0 monté après `pixelisation` | **Le fondu est-il régulier et sans flash ?** |
+| `ADNQ26Y` | `X` + arrondi de la rampe + registre 0 monté après `pixelisation` | ✅ à valider |
+| `ADNQ26Z` | `Y` + `pixdraw` par plans de bits, durée pilotée, rideau de texte global | **La révélation tient-elle 2 min sans à-coups ? Le texte s'affiche-t-il d'un bloc ?** |
 
 Si `Q` échoue, **rebaser `R`** sur la version qui tourne au lieu de le tester tel quel.
 
