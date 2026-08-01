@@ -38,7 +38,7 @@ cellule 8×8 est **toujours le registre matériel 0**, imposé par le AND de
 |---|---|---|
 | `test_color_contrast` lit la palette dans `pal%` | ✅ | Plus rapide et indépendant du timing du fondu (avant : `XBIOS(7,…)`). |
 | Appel après chaque `ldpic` (intro, chaque morceau, finale) | ✅ | |
-| `recolor_font` repeint l'encre | ⚠️ | Utilise `cptst` (une FUNCTION) → **risque `ERR 15`**. Le contournement testé (recopier la logique dans la PROCEDURE) a été perdu lors du retour à la base P ; à réappliquer si l'erreur revient. |
+| `recolor_font` repeint l'encre | 🔬 | Logique de `cptst`/`cpset` **recopiée dans la procédure** depuis `ADNQ26T` : plus d'appel de FUNCTION, plus de dépendance à `t160&()`. |
 | Conversion VDI dans `area.lines.erase` | ✅ | `COLOR vdicol|(box_col&)` |
 | Poids des plans dans `cptst` / `cpset` | 🔬 | **Corrigé le 2026-08-01, non testé.** Voir ci-dessous. |
 | Choix `test_color_contrast(2,…)` au lieu de `(0,…)` | 🔬 | **Non testé.** Seul écart de code avec la version qui tourne, avant la correction des plans. |
@@ -86,26 +86,42 @@ deviennent cohérents — `ink_col&` = **15** (le plus clair) et `box_col&` = **
 (le plus sombre) pour les 30 morceaux, au lieu de valeurs dispersées
 (12, 6, 14, 11, 1, 5, 3…) qui n'étaient que du bruit.
 
-### Fragmentation des glyphes — cause NON identifiée
+### Fragmentation des glyphes — CAUSE IDENTIFIÉE (corrigée dans `ADNQ26T`)
 
-Symptôme : sur l'écran d'intro le texte est net, mais dès le 1ᵉʳ morceau les
-lettres apparaissent trouées. **Quatre hypothèses ont été vérifiées et écartées :**
+Symptôme : texte net sur l'écran d'intro, lettres trouées dès le 1ᵉʳ morceau.
+
+**Cause.** `recolor_font` appelait `cptst`, une **FUNCTION** qui lit le tableau
+global `t160&()`. Or `t160&(200)` est dimensionné **dans `pmul160`**, pas dans les
+`DIM` groupés de `hello` — le commentaire du code s'en méfiait déjà (« bugs with
+DIM in functions or procedures ?? »). C'est la cause d'`ERR 15` déjà documentée
+dans `continue.md` §6.2. Quand `t160&(y&)` rend une valeur erronée, `cptst` lit
+**et `cpset` écrit** à la mauvaise adresse : la conversion est partielle.
+
+**Pourquoi l'intro était épargnée** — le point qui a permis de trancher :
+
+| Écran | `ink_col&` | Effet de `recolor_font` |
+|---|---|---|
+| Intro (`adnquizz.pi1`) | **2** | = la couleur d'origine de `FONT.INL` → **no-op**, le défaut reste invisible |
+| Les 30 morceaux | **15** | doit allumer **3 plans vides** sur 1540 pixels → le défaut devient visible |
+
+**Correction** (`ADNQ26T`) : la logique de `cptst`/`cpset` est recopiée dans
+`recolor_font`, qui calcule l'offset de ligne directement (`font%+MUL(y&,160)`).
+Plus aucun appel de FUNCTION, plus aucune dépendance à un tableau global.
+C'est le contournement que `continue.md` §6.2 avait validé et qui avait été perdu
+au retour à la base P.
+
+Équivalence vérifiée par simulation : l'ancienne et la nouvelle logique donnent
+le même résultat exact (3580 pixels de fond, 1540 d'encre en couleur 15).
+
+**Quatre hypothèses ont été vérifiées et écartées en chemin** — utile pour ne pas
+les reprendre :
 
 | Hypothèse | Verdict |
 |---|---|
 | Le masque du rideau serait incomplet | **Faux.** Simulé : les états 6 et 7 couvrent 64/64 pixels. |
-| La correction des poids de plans | **Impossible.** Elle ne change qu'une couleur uniforme, elle ne peut pas trouer un glyphe. |
-| `stab` alterne les tampons, l'un serait en retard | **Faux.** Un tampon finit à l'état 6, l'autre à l'état 7 — les deux sont complets. |
-| `choix 2` au lieu de `choix 0` | **Hors de cause pour l'image 01** : les deux donnent 12. |
-
-Constat utile : `FONT.INL` est en **couleur 2** et ne contient que 2 couleurs
-(0 et 2). `continue.md` §2 (« index 15 ») et le commentaire du `DATA`
-(« 4 colours ») sont **tous deux faux** — vérifié en décodant le fichier.
-
-**Prochaine expérience** : neutraliser `recolor_font` pour les morceaux tout en
-gardant `set_text_colors` pour les couleurs de bandeau. Texte net en couleur 2
-⇒ le coupable est `recolor_font` ; texte toujours troué ⇒ le problème est dans
-la chaîne d'affichage et `recolor_font` est hors de cause.
+| La correction des poids de plans | **Impossible.** Elle ne change qu'une couleur uniforme. |
+| `stab` alterne les tampons, l'un serait en retard | **Faux.** Les deux états finaux sont complets. |
+| `choix 2` au lieu de `choix 0` | **Hors de cause** : les deux donnent 12 sur l'image 01. |
 
 ### File d'attente des cycles de test
 
@@ -113,7 +129,8 @@ la chaîne d'affichage et `recolor_font` est hors de cause.
 |---|---|---|
 | `ADNQ26Q` | Poids de plans corrigés + `test_color_contrast(2,…)` | Le texte est-il lisible sur les 30 images, en particulier le morceau 3 (le pire cas : texte noir sur fond noir) ? |
 | `ADNQ26R` | `Q` + correctif mémoire (une seule origine `log%`) | La musique se joue-t-elle ? Le programme démarre-t-il toujours ? |
-| `ADNQ26S` | `R` + lecture correcte de la palette STE | Les couleurs choisies sont-elles enfin cohérentes (encre 15, bandeau 0) ? |
+| `ADNQ26S` | `R` + lecture correcte de la palette STE | Couleurs cohérentes (encre 15, bandeau 0) ✅, mais glyphes toujours troués. |
+| `ADNQ26T` | `S` + `recolor_font` sans appel de FUNCTION | **Les glyphes sont-ils enfin nets sur les morceaux ?** |
 
 Si `Q` échoue, **rebaser `R`** sur la version qui tourne au lieu de le tester tel quel.
 
