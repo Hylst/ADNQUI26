@@ -290,9 +290,31 @@ des paliers rectangulaires intercalés :
 16x16 -> 16x8 -> 8x8 -> 8x4 -> 4x4 -> 4x2 -> 2x2 -> 2x1 -> 1x1
 ```
 
-Pour aller plus loin : augmenter le nombre de bandes (`bande&=0 TO 7` et le 72
-de `tenue&`) donne des étapes plus rapprochées sans toucher aux niveaux. Une
-bande fait 25 lignes ; 10 bandes de 20 lignes donneraient 90 étapes.
+**Porté à 20 bandes de 10 lignes** dans `ADNQ27B` : 9 × 20 = **180 étapes**, une
+modification toutes les **0,67 s**. Les diviseurs entiers de 200 utilisables sont
+8, 10, 20 et 25 bandes — 16 bandes donneraient 12,5 lignes, à éviter.
+
+### Optimisations de `pixdraw` appliquées (`ADNQ27B`)
+
+| Optimisation | Gain |
+|---|---|
+| Transformation horizontale au **mot** (masque + décalages) au lieu des tables d'octets | 80 itérations par ligne au lieu de 160 |
+| Réplication verticale par **doublement** (1, 2, 4, 8 lignes) | 4 `BMOVE` au lieu de 15 pour `nv&=16` |
+| Niveau `1×1` en un seul `BMOVE` de 32000 | 1 appel au lieu de 200 |
+
+Le principe de la transformation au mot : le masque isole le bit de gauche de
+chaque bloc, les `OR` décalés le recopient sur les bits à sa droite.
+
+```gfa
+w%=CARD{sl%+i&} AND &HAAAA     ! blocs de 2 : bits 15,13,11,...
+CARD{dl%+i&}=w% OR SHR(w%,1)
+```
+
+Masques : `&HAAAA` pour 2 pixels, `&H8888` pour 4, `&H8080` pour 8. Équivalence
+avec les anciennes tables vérifiée sur 20000 mots aléatoires, 0 divergence.
+
+`w%` est un **long** et non un mot : `&HAAAA` a le bit 15 à 1, un `SHR&` sur un
+mot signé propagerait ce bit. Ne pas « optimiser » ce type.
 
 La table des niveaux est dans `@pixinit` (`DATA 16,16,16,8,…`) : ajouter des
 paliers ne demande que d'allonger cette ligne et d'ajuster les bornes.
