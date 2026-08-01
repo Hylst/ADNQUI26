@@ -7,7 +7,7 @@ Légende : ✅ fonctionne · ⚠️ fonctionne avec réserve · 🔬 modifié, n
 | Fonctionnalité | État | Note |
 |---|---|---|
 | Enchaînement des 30 morceaux | ✅ | |
-| Lecture musique SNDH | ⚠️ | « Pas de musique » signalé lors d'un test, jamais investigué. Vérifier d'abord la config audio de Steem SSE (YM/DMA, volume). Voir aussi le point d'attention mémoire dans `STRUCTURE.md`. |
+| Lecture musique SNDH | ⚠️ | « Pas de musique » signalé lors d'un test, jamais investigué. Vérifier d'abord la config audio de Steem SSE (YM/DMA, volume). **Piste sérieuse** : le début de `sndhplay%` (186 octets) peut être écrasé par la fin de `pic%` — correctif dans `ADNQU26R.LST`, cf. `STRUCTURE.md`. |
 | Apparition progressive de l'image (pixellisation, scrambling) | ✅ | |
 | Affichage du texte réponse (artiste / titre) | ⚠️ | Lisible seulement si la palette de l'image s'y prête — c'est le sujet ouvert ci-dessous. |
 | Contrôle clavier (Espace / Entrée / Backspace) | ✅ | |
@@ -58,6 +58,15 @@ introduite** : la fonte d'origine était en 15, seule valeur usuelle invariante.
 
 Tant que ce défaut était présent, tester `choix 2` ne pouvait rien démontrer —
 la couleur choisie était brouillée avant d'être appliquée.
+
+### File d'attente des cycles de test
+
+| Version | Contenu | À vérifier |
+|---|---|---|
+| `ADNQU26Q` | Poids de plans corrigés + `test_color_contrast(2,…)` | Le texte est-il lisible sur les 30 images, en particulier le morceau 3 (le pire cas : texte noir sur fond noir) ? |
+| `ADNQU26R` | `Q` + correctif mémoire (une seule origine `log%`) | La musique se joue-t-elle ? Le programme démarre-t-il toujours (le `+256` pourrait tendre l'allocation) ? |
+
+Si `Q` échoue, **rebaser `R`** sur la version qui tourne au lieu de le tester tel quel.
 
 ### Pistes non explorées
 

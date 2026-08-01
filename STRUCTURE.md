@@ -5,7 +5,8 @@
 | Fichier | Rôle |
 |---|---|
 | `ADNQ26WO.LST/.GFA/.PRG` | **Référence qui tourne.** Identique à `ADNQU26P`. Ne pas écraser. |
-| `ADNQU26Q.LST/.GFA/.PRG` | Version de développement en cours. |
+| `ADNQU26Q.LST/.GFA/.PRG` | Développement — **cycle en cours** : plans de bits + `choix 2`. |
+| `ADNQU26R.LST` | `Q` + correctif mémoire — **cycle suivant**. `.GFA`/`.PRG` à générer. |
 | `ADNQUI26.*`, `…26N`, `…26O`, `…26P`, `…26W` | Versions antérieures, conservées. |
 | `*.BAK` | Sauvegardes de l'éditeur GFA. |
 | `GFABASIC.PRG` | Copie locale de l'interpréteur. |
@@ -61,17 +62,27 @@ taille des fichiers de base, plus 200000 pour la musique.
 > `sndhplay%`**, qui ne fait que 186 octets — donc sur ses points d'entrée.
 >
 > **Statut : hypothèse non testée.** Elle expliquerait le symptôme « pas de
-> musique » resté en suspens. Correctif proposé (une seule origine) :
+> musique » resté en suspens.
+>
+> **Le correctif existe dans `ADNQU26R.LST`** (une seule origine, `log%` partout) :
 >
 > ```gfa
-> mem_block%=MALLOC(total_size%+256)
+> mem_block%=MALLOC(total_size%+256)   ! marge pour l'arrondi
 > log%=(mem_block%+255) AND &HFFFFFF00
-> sndhplay%=log%+cumul_size%(0)     ! log% et non mem_block%
+> sndhplay%=log%+cumul_size%(0)        ! log% et non mem_block%
 > sp3%     =log%+cumul_size%(1)
 > font%    =log%+cumul_size%(2)
 > ```
 >
-> Ne pas l'appliquer en même temps qu'un autre changement (cf. `AGENTS.md` §1).
+> Les deux chaînes deviennent jointives **par construction**, quelle que soit
+> l'adresse rendue par `MALLOC`. Le `+256` est nécessaire : la dernière adresse
+> utilisée est `log%+total_size%`, jusqu'à 255 octets au-delà de
+> `mem_block%+total_size%`.
+>
+> ⚠️ Ce `+256` augmente très légèrement la demande d'allocation. Si le `MALLOC`
+> était déjà au ras de la mémoire libérée par `RESERVE`, il pourrait échouer →
+> `EDIT` → écran noir. Peu probable, mais c'est le premier symptôme à
+> reconnaître si `R` ne démarre pas.
 
 Un chevauchement du même genre a déjà été corrigé : `tune%` valait `pic%+32034`,
 qui tombait exactement sur `sndhplay%` — chaque chargement de musique (38 à 75 Ko)

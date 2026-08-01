@@ -35,7 +35,13 @@ Un dépôt git est initialisé sur `main`.
 
 - **`ADNQ26WO.*`** — copie de référence **qui tourne** (identique à `ADNQU26P`, MD5 vérifié).
   Ne jamais l'écraser : c'est le point de retour.
-- **`ADNQU26Q.*`** — version de développement en cours.
+- **`ADNQU26Q.*`** — **à tester maintenant** : correction des poids de plans de bits
+  et `test_color_contrast(2,…)`.
+- **`ADNQU26R.LST`** — **cycle suivant** : `Q` + correctif mémoire (double origine
+  des tampons). `.GFA` / `.PRG` restent à générer par le cycle de build.
+
+Les versions sont volontairement empilées une par cycle de test : si `Q` échoue,
+`R` est à rebaser sur ce qui tourne plutôt qu'à tester tel quel.
 
 ## Documentation
 
