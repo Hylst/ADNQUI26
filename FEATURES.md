@@ -59,12 +59,57 @@ introduite** : la fonte d'origine était en 15, seule valeur usuelle invariante.
 Tant que ce défaut était présent, tester `choix 2` ne pouvait rien démontrer —
 la couleur choisie était brouillée avant d'être appliquée.
 
+### Palette STE mal lue (2026-08-01) — corrigé dans `ADNQ26S`
+
+Les `.PI1` de ce projet sont au **format STE** (4096 couleurs) : les bits 11, 7
+et 3 y sont utilisés — `$0EC5`, `$0F77`… impossibles en format ST 3 bits.
+
+Or `test_color_contrast` lisait les quartets bruts. En STE, le 4ᵉ bit de chaque
+composante est le **LSB stocké en tête du quartet** :
+
+```
+$0EC5  lu RGB(14,12,5)  ->  vraie couleur RGB(13,9,10)
+$0180  lu RGB(1,8,0)    ->  vraie couleur RGB(2,1,0)
+```
+
+Le classement par luminosité était donc calculé sur des valeurs brouillées.
+Correction : `valeur = SHL&((n& AND 7),1) + SHR&((n& AND 8),3)`. Sur une palette
+ST pure (quartets 0-7) elle rend `2*n`, ce qui laisse le classement inchangé —
+elle est donc sans risque.
+
+Effet mesuré sur les 32 images : **25 changent de couleur**. Les résultats
+deviennent cohérents — `ink_col&` = **15** (le plus clair) et `box_col&` = **0**
+(le plus sombre) pour les 30 morceaux, au lieu de valeurs dispersées
+(12, 6, 14, 11, 1, 5, 3…) qui n'étaient que du bruit.
+
+### Fragmentation des glyphes — cause NON identifiée
+
+Symptôme : sur l'écran d'intro le texte est net, mais dès le 1ᵉʳ morceau les
+lettres apparaissent trouées. **Quatre hypothèses ont été vérifiées et écartées :**
+
+| Hypothèse | Verdict |
+|---|---|
+| Le masque du rideau serait incomplet | **Faux.** Simulé : les états 6 et 7 couvrent 64/64 pixels. |
+| La correction des poids de plans | **Impossible.** Elle ne change qu'une couleur uniforme, elle ne peut pas trouer un glyphe. |
+| `stab` alterne les tampons, l'un serait en retard | **Faux.** Un tampon finit à l'état 6, l'autre à l'état 7 — les deux sont complets. |
+| `choix 2` au lieu de `choix 0` | **Hors de cause pour l'image 01** : les deux donnent 12. |
+
+Constat utile : `FONT.INL` est en **couleur 2** et ne contient que 2 couleurs
+(0 et 2). `continue.md` §2 (« index 15 ») et le commentaire du `DATA`
+(« 4 colours ») sont **tous deux faux** — vérifié en décodant le fichier.
+
+**Prochaine expérience** : neutraliser `recolor_font` pour les morceaux tout en
+gardant `set_text_colors` pour les couleurs de bandeau. Texte net en couleur 2
+⇒ le coupable est `recolor_font` ; texte toujours troué ⇒ le problème est dans
+la chaîne d'affichage et `recolor_font` est hors de cause.
+
 ### File d'attente des cycles de test
 
 | Version | Contenu | À vérifier |
 |---|---|---|
 | `ADNQ26Q` | Poids de plans corrigés + `test_color_contrast(2,…)` | Le texte est-il lisible sur les 30 images, en particulier le morceau 3 (le pire cas : texte noir sur fond noir) ? |
-| `ADNQ26R` | `Q` + correctif mémoire (une seule origine `log%`) | La musique se joue-t-elle ? Le programme démarre-t-il toujours (le `+256` pourrait tendre l'allocation) ? |
+| `ADNQ26R` | `Q` + correctif mémoire (une seule origine `log%`) | La musique se joue-t-elle ? Le programme démarre-t-il toujours ? |
+| `ADNQ26S` | `R` + lecture correcte de la palette STE | Les couleurs choisies sont-elles enfin cohérentes (encre 15, bandeau 0) ? |
 
 Si `Q` échoue, **rebaser `R`** sur la version qui tourne au lieu de le tester tel quel.
 
