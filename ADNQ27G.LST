@@ -297,10 +297,9 @@ PROCEDURE quizz
     ' display answer bitmap text on 2 lines : 1 : Artist Name  2 : Music Name
     @dboff ! screen double buffer off (basic fx)
     @answer_display(answer1$(file&),answer2$(file&))
-    REPEAT
-      matouche&=BYTE{&HFFFC02}
-      VSYNC
-    UNTIL matouche&=&H1C OR matouche&=&HE ! IF RETURN or BACKSPACE PRESSED
+    ' L'attente statique est remplacee par l'ondulation animee : elle tourne
+    ' jusqu'a ENTREE ou BACKSPACE et laisse matouche& renseigne.
+    @txt.anim(answer1$(file&),answer2$(file&))
     IF matouche&=&HE ! SI BACKSPACE ! back to previous track
       DEC file&
       DEC file& ! decreasing twice as we need to go before the previous track as it will be increased on NEXT
@@ -726,6 +725,60 @@ PROCEDURE pixhold(trames&)
     @tatouche
     EXIT IF pixl_exit&=1
   NEXT k&
+RETURN
+.
+' !>
+PROCEDURE txt.ligne(t$,yb&)
+  ' Dessine UNE ligne de texte a l'etat final du rideau (masque 56), chaque
+  ' lettre posee sur la sinusoide decalee par txt.phase&. Sert a l'animation :
+  ' pas de rideau, pas de stab, dessin direct sur l'ecran visible.
+  LOCAL nc&,c&,px&,pc&,yv&
+  nc&=PRED(LEN(t$))
+  IF nc&>38
+    t$=LEFT$(t$,38)
+    nc&=PRED(LEN(t$))
+  ENDIF
+  px&=160-(nc&+1)*char.width&/2
+  FOR c&=1 TO SUCC(nc&)
+    pc&=PRED(INSTR(font.chars$,MID$(t$,c&,1)))
+    IF (pc&<43)
+      yv&=yb&+sinus&(AND(ADD(c&,txt.phase&),15))
+      RC_COPY fmask%,56,0,8,8 TO phy%,px&,yv&
+      RC_COPY font%,bitmap.char.x&(pc&),bitmap.char.y&(pc&),char.width&,char.height& TO phy%,px&,yv&,1
+    ENDIF
+    ADD px&,char.width&
+  NEXT c&
+RETURN
+.
+' !>
+PROCEDURE txt.anim(a1$,a2$)
+  ' Ondulation ANIMEE du texte, jusqu'a ENTREE ou BACKSPACE.
+  '
+  ' Le fond sous le texte est l'IMAGE ELLE-MEME, deja en memoire dans pic% :
+  ' restaurer une ligne est un simple BMOVE, aucun tampon de sauvegarde n'est
+  ' necessaire. Effet de bord voulu : le texte apparait SUR l'image, sans
+  ' bandeau noir -- c'est l'affichage en transparence vise.
+  '
+  ' Budget : 37 BMOVE de 160 octets pour la restauration, plus environ 80
+  ' RC_COPY pour les deux lignes. Cela ne tient pas dans une trame de 20 ms,
+  ' d'ou les deux VSYNC : l'animation tourne a 25 Hz.
+  '
+  ' La bande couvre 126 a 162 : les deux lignes de texte sont a 130 et 150,
+  ' hauteur 8, plus l'amplitude de la vague (3 pixels de part et d'autre).
+  LOCAL yl&
+  @dboff ! un seul ecran : on dessine directement sur le visible
+  txt.phase&=0
+  REPEAT
+    FOR yl&=126 TO 162
+      BMOVE pic%+t160&(yl&),phy%+t160&(yl&),160
+    NEXT yl&
+    txt.phase&=SUCC(txt.phase&)
+    @txt.ligne(a1$,130)
+    @txt.ligne(a2$,150)
+    VSYNC
+    VSYNC
+    matouche&=BYTE{&HFFFC02}
+  UNTIL matouche&=&H1C OR matouche&=&HE
 RETURN
 .
 ' !>
