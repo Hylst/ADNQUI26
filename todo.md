@@ -1,4 +1,42 @@
-# TODO — pistes d'amélioration
+# TODO — ADN QUIZZ
+
+> Fichier de travail : **`ADNQ27G.LST`** uniquement, avec un commit git par étape.
+> Historique et décisions passées : `changelog.md`. État des fonctionnalités :
+> `FEATURES.md`. Méthode et pièges : `AGENTS.md`.
+
+---
+
+## Plan de bataille
+
+### En cours / immédiat
+
+| # | Chantier | Où | État |
+|---|---|---|---|
+| 1 | **Ondulation animée** du texte jusqu'à la touche, avec **restauration ciblée du fond** | §11 | à faire |
+| 2 | **Feu d'artifice** en remplacement de l'image finale digitalisée | §12 | à concevoir |
+
+### Ensuite
+
+| # | Chantier | Où |
+|---|---|---|
+| 3 | Choix de l'encre par **rareté × contraste** (rend le cyclage de palette viable) | §13 |
+| 4 | **Contour** autour des glyphes au lieu du bandeau noir → texte sur l'image | §10.4 |
+| 5 | Scrolltext d'intro avec `2p_16_22.pi1` | §12.3 |
+| 6 | Nettoyage : `chk$`, `ALERT`, code mort | §10.2, §10.3 |
+| 7 | Passer les procédures aux `LOCAL` | §10.1 |
+
+### Bloqué sur de l'assembleur — pour plus tard
+
+| Sujet | Pourquoi | Où |
+|---|---|---|
+| Raster / Timer B (barres, scroll matériel STE) | GFA ne peut pas produire un `RTE` ni acquitter le MFP | §8.3, §8.4 |
+| Fondu du volume musical | le lecteur SNDH réécrit les registres YM chaque trame sous interruption | §9.2 |
+
+Le projet a déjà le motif pour ça : `DATA\SNDHPLAY.INL` est une routine machine
+chargée par `BLOAD`. Une routine raster suivrait le même chemin.
+
+---
+
 
 ## 1. Effet de transition (`pixelisation`, l. 403)
 
@@ -629,3 +667,84 @@ qu'il contraste à la fois avec l'encre et avec le fond local.
   effectivement ces copies, et `hello` l'active déjà quand il le détecte.
 - **Aucune division flottante** ne subsiste dans une boucle chaude.
 - `FOR`/`NEXT`, `IF`/`ENDIF`, `WHILE`/`WEND`, `REPEAT`/`UNTIL` : tous équilibrés.
+
+
+---
+
+## 11. Ondulation animée avec restauration ciblée du fond
+
+**Le principe qui rend tout simple** : le fond sous le texte, c'est l'image
+elle-même, déjà en mémoire dans `pic%`. Pas besoin de tampon de sauvegarde —
+restaurer une ligne, c'est `BMOVE pic%+t160&(y),phy%+t160&(y),160`.
+
+Boucle d'animation, à la place de l'attente clavier actuelle dans `quizz` :
+
+```
+1. restaurer la bande depuis pic%        (~40 BMOVE de 160 octets)
+2. dessiner les deux lignes a la phase courante  (~80 RC_COPY)
+3. INC phase&
+4. VSYNC, VSYNC                          (25 Hz)
+5. tester le clavier, sortir si touche
+```
+
+**Budget** : environ 80 `RC_COPY` par trame ne tient pas en 20 ms, mais passe en
+40 ms — d'où les deux `VSYNC`. À mesurer sur machine.
+
+**Effet de bord bienvenu** : en restaurant depuis `pic%` plutôt qu'en peignant un
+bandeau, le texte se retrouve **sur l'image**, ce qui est exactement l'affichage
+en transparence visé. Le bandeau `box_col&` devient optionnel.
+
+**Point d'attention** : la bande restaurée doit couvrir l'amplitude de la vague
+(± 3 lignes) plus la hauteur des glyphes, sinon traînée.
+
+---
+
+## 12. Feu d'artifice
+
+### 12.1 Principe retenu
+
+**Particules précalculées.** Les trajectoires sont calculées une seule fois au
+démarrage dans un tableau (x, y par trame) ; à l'exécution il ne reste que
+l'affichage et l'effacement. Une gerbe = N points avec vitesse initiale et
+gravité.
+
+### 12.2 Ce qui rend l'effet beau pour presque rien
+
+- **Cyclage de palette pour le refroidissement** : blanc → jaune → orange → rouge
+  → noir. Les particules ne sont jamais redessinées, seule la palette change —
+  une écriture par trame. C'est ici que le cyclage est légitime, contrairement au
+  texte (cf. §13) : les particules sont les seules à utiliser ces registres.
+- **Effacement sélectif** : restaurer uniquement les pixels touchés depuis le fond,
+  jamais un `CLS` global.
+- **Gerbes décalées dans le temps** : trois ou quatre départs échelonnés donnent
+  une impression de densité sans multiplier le coût instantané.
+
+### 12.3 Écran d'intro — projets notés
+
+L'image d'intro sera remplacée par du pixel art personnel. Effets envisagés :
+scrolltext en bas d'écran (police `2p_16_22.pi1`, 32 066 o), 3 VU-mètres temps
+réel, note de musique en 3D fil de fer.
+
+---
+
+## 13. Encre choisie par rareté × contraste
+
+Le cyclage de palette sur l'encre du texte **ne marche pas** tel quel : changer un
+registre repeint tous les pixels de l'image qui l'utilisent.
+
+**Mais la mesure ouvre une voie** : l'index le **moins utilisé** de vos images ne
+couvre en moyenne que **1,39 %** des pixels.
+
+```
+01.PI1 : index 15 →  0,42 %
+06.PI1 : index 12 →  0,85 %
+02.PI1 : index 14 →  1,11 %
+```
+
+Si `test_color_contrast` combinait **rareté et contraste** au lieu du seul
+contraste, animer ce registre ne toucherait qu'environ 1 % de l'image — invisible
+en pratique. Le code contient déjà `DIM freq%(16) ! for scan_pic_for_color` :
+l'infrastructure était prévue.
+
+Compromis à arbitrer : l'index le plus rare n'est pas forcément le mieux contrasté.
+Un score pondéré, à régler à l'œil.
