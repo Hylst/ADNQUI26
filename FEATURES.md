@@ -233,7 +233,8 @@ rapide. Avec `DIV(ADD(MUL(r&,i&),12),24)` :
 | `ADNQ27A` | `Z` + 9 niveaux (paliers rectangulaires) × 8 bandes = 72 étapes | ✅ Testé : bon effet, mais dessin encore lent et pas assez d'étapes. |
 | `ADNQ27B` | `A` + transformation au mot, réplication par doublement, 20 bandes = 180 étapes | ✅ à valider |
 | `ADNQ27C` | `B` + `scrambling(duree&)` et alternance des deux effets par morceau | ✅ à valider |
-| `ADNQ27D` | `C` + `dissolve.to.pic` : l'espace révèle en 2 s au lieu d'un coup | **L'appui sur espace donne-t-il un dévoilement progressif ?** |
+| `ADNQ27D` | `C` + `dissolve.to.pic` : l'espace révèle en 2 s au lieu d'un coup | ✅ à valider |
+| `ADNQ27E` | `D` + `dezoom.rc` restauré, alternance à 3 effets | **Les 3 effets tournent-ils bien à tour de rôle ?** |
 
 Si `Q` échoue, **rebaser `R`** sur la version qui tourne au lieu de le tester tel quel.
 

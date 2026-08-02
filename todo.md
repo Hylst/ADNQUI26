@@ -265,7 +265,7 @@ la même interface de durée** que `pixelisation(duree&)` :
 | `random_pixels` | ❌ **jamais appelée, et risquée** | voir ci-dessous |
 | `slow_fadeon` | ❌ **coquille vide** | corps = `' to implement`, 2 lignes |
 | `dysplay_text_shuffle` | ⚠️ hors sujet | signature `(background%,text%)` — effet de **texte**, pas de révélation d'image |
-| Ancien dézoom `RC_COPY` | ❌ **supprimé** du fichier courant | récupérable, voir plus bas |
+| `dezoom.rc` (ancien `RC_COPY`) | ✅ restauré (`ADNQ27E`) | interface `(duree&)`, 6 niveaux, fin en dissolve |
 | Volet / entrelacement | ⬜ non écrits | cf. §6.1 |
 
 #### `random_pixels` — à ne pas activer en l'état
@@ -335,11 +335,14 @@ CASE 0
 CASE 1
   @scrambling(pix.duree&)
 CASE 2
-  @pixelisation.rccopy(pix.duree&)
+  @dezoom.rc(600)
 CASE 3
-  @random_pixels(pix.duree&)
+  @random_pixels(pix.duree&)      ! chantier 3, pas encore fait
 ENDSELECT
 ```
+
+**État : `SELECT MOD(file&,3)` est en place** avec les trois premiers effets.
+Passer à `MOD(file&,4)` quand `random_pixels` sera réécrite.
 
 Une fois toutes les procédures alignées, un simple sélecteur dans `quizz` suffit :
 
