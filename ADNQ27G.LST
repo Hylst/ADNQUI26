@@ -91,6 +91,13 @@ chk$="quizz"
   ENDIF
   ' Set all needed buffers address from big malloc
   log%=(mem_block%+255) AND &HFFFFFF00 ! Stf compatible adress for video shifter
+  ' MALLOC ne garantit PAS une memoire a zero : l'emulateur rend souvent des
+  ' pages vierges, une vraie machine rend le contenu precedent. log% etait donc
+  ' affiche brouille au premier stab, avant d'etre efface. C'est le candidat
+  ' principal pour l'ecran brouille observe au demarrage sur ST reel.
+  FOR fill%=log% TO log%+31996 STEP 4
+    LONG{fill%}=0
+  NEXT fill%
   pal%=log%+32256           ! current palette
   stzpal%=pal%+32           ! black palette
   savpal%=stzpal%+32        ! save palette
@@ -142,7 +149,7 @@ chk$="quizz"
   DIM freq%(16) ! for scan_pic_for_color
   DIM pnh&(8),pnv&(8) ! taille de bloc horizontale / verticale par niveau
   DIM ordre&(1000) ! ordre de devoilement pour @random_pixels (2 Ko)
-  DIM rcniv&(8) ! tailles de bloc de @dezoom.rc
+  DIM rcniv&(17) ! tailles de bloc de @dezoom.rc
   DIM sinus&(15) ! table d'ondulation du texte, cf. @display.bitmap.txt
   RESTORE sin.vague
   FOR i&=0 TO 15
@@ -150,7 +157,7 @@ chk$="quizz"
   NEXT i&
   txt.vague&=0 ! 0 = texte droit, 1 = texte ondule
   RESTORE rc.niveaux
-  FOR i&=0 TO 8
+  FOR i&=0 TO 17
     READ rcniv&(i&)
   NEXT i&
   @pixinit
@@ -623,10 +630,19 @@ PROCEDURE dezoom.rc(duree&)
   ' l'effet semblait travailler dans le vide, et deux des six niveaux etaient
   ' perdus. L'echelle s'arrete maintenant a 4, et compte neuf paliers tous
   ' multiples de 4 (tuilage exact) au lieu de six dont quatre utiles.
-  LOCAL cycle&,taille&,x&,y&,i&,j&,bh&,bl&,tenue&
-  tenue&=DIV(duree&,9)
+  ' L'attente est repartie PAR RANGEE de blocs, et non prise d'un bloc en fin
+  ' de niveau. Avant, un balayage grossier se terminait en une fraction de
+  ' seconde puis la procedure attendait 1,3 s sans rien afficher : d'ou
+  ' l'impression qu'elle travaillait dans le vide, arrivee en bas d'ecran.
+  ' Les 18 paliers totalisent 182 rangees ; l'attente par rangee vaut donc
+  ' duree&/182 et la progression devient continue de haut en bas.
+  LOCAL cycle&,taille&,x&,y&,i&,j&,bh&,bl&,tr&
+  tr&=DIV(duree&,182)
+  IF tr&<1
+    tr&=1
+  ENDIF
   pixl_exit&=0
-  FOR cycle&=0 TO 8
+  FOR cycle&=0 TO 17
     taille&=rcniv&(cycle&)
     FOR y&=0 TO 199 STEP taille&
       bh&=taille&
@@ -644,13 +660,10 @@ PROCEDURE dezoom.rc(duree&)
           NEXT i&
         NEXT j&
       NEXT x&
-      ' @tatouche une fois par rangee de blocs, et non dans les deux boucles
-      ' les plus internes comme a l'origine.
-      @tatouche
+      ' attente courte apres CHAQUE rangee : le clavier y est teste aussi
+      @pixhold(tr&)
       EXIT IF pixl_exit&=1
     NEXT y&
-    EXIT IF pixl_exit&=1
-    @pixhold(tenue&)
     EXIT IF pixl_exit&=1
   NEXT cycle&
   IF pixl_exit&=1
@@ -660,7 +673,7 @@ PROCEDURE dezoom.rc(duree&)
     BMOVE pic%,log%,32000
   ENDIF
 rc.niveaux:
-  DATA 48,40,32,24,20,16,12,8,4
+  DATA 72,68,64,60,56,52,48,44,40,36,32,28,24,20,16,12,8,4
 RETURN
 .
 ' !>
