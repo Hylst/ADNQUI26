@@ -1,0 +1,1693 @@
+' ADN QUIZZ - GUESS TITLE FROM MUSIC
+' HYLST + DEBUG : TOMCHI & DMA SC
+' affichage test clipp�,auto centre,font mono (avec possib de det couleur optimale visib) ou couleur, outline software possible
+' So many strange errors
+' Retropedalage, trop de bugs, rappel version de base
+' Modifs faciles en cas de prob de contraste pour la police avec rc copy mode
+' Checklist : UnPixelate, Scrambling, Fadeon/off, Sndh player renew, file loading, text display
+$m 450000 ! memory need for the program 2 be compiled arrays & strings - OR RESERVE...
+.
+.
+chk$="hello"
+@hello
+chk$="get_slide_filenames"
+@get_slide_filenames
+chk$="base_files_load"
+@base_files_load
+chk$="clearpal"
+@clearpal
+chk$="pmul160"
+@pmul160 ! precalc 160*y&
+chk$="prepfont"
+@prepfont(FALSE) ! prepare font for display (4 colours or mono)
+chk$="set_text_colors"
+@set_text_colors ! pick ink/box colours from the intro picture palette
+chk$="sndh"
+@sndh(tune%)
+chk$="screen.opening"
+@screen.opening(pic%)
+chk$="intro_quizz"
+@intro_quizz
+chk$="quizz"
+@quizz
+@bye
+.
+.
+'  !>
+> PROCEDURE hello
+  .
+  ' compiler options
+  ' $I- ! disable interrupt routine  -  $I+{ would enable them
+  ' $N- ! Disable FOR-NEXT range checking
+  ' $S> ! Fast select case  -  $C< slower but shorter code
+  ' $*& ! Longword multiplication with muls  -  $*% :  without
+  ' $%3 ! Always execute integer division as an integer division  -   $%0 = opposite
+  '
+  ' ***********************************************************************************************
+  compiled!=BYTE{BASEPAGE+256}<>96  ! false=interpreted/true=compiled
+  ' NE PAS remettre le IF NOT compiled! autour de RESERVE :
+  ' RESERVE libere la memoire au dela de 400000 vers GEMDOS, et le
+  ' MALLOC juste en dessous (environ 488000) depend de cette liberation.
+  ' Sans RESERVE en compile, le MALLOC echoue et on tombe dans EDIT
+  ' donc sortie immediate, ecran noir.
+  ' IF NOT compiled!
+  RESERVE 400000! 65536 ! if interpreted
+  ' ENDIF
+  ' reserve memory for double screen buffer, for void + current + save palette, 22 free lines for lowborder font mask, space for current pic 2 display
+  ' NB: le tampon musique (200000) est ajoute plus bas, APRES le calcul des fichiers de base,
+  ' pour que tune% ne chevauche plus sndhplay%/sp3%/font% (bug corrige : voir plus bas)
+  total_size%=32256+32+32+32+(22+8)*160+32034
+  .
+  .///////////////////////////////////
+  ' @calc_needed_memory(total_size%)
+  ' Calc buffer space needed for base files loading
+  .
+  RESTORE base.files
+  READ nb_files& ! number of base files to load
+  DEC nb_files&
+  DIM file_name$(nb_files&),cumul_size%(nb_files&)
+  FOR file&=0 TO nb_files&
+    READ fname$
+    file_name$(file&)=fname$ ! mypath$+fname$
+    OPEN "I",#1,file_name$(file&)
+    length%=LOF(#1)
+    cumul_size%(file&)=total_size%
+    ADD total_size%,length%
+    CLOSE #1
+  NEXT file&
+  ' tampon musique (tune%) ajoute ICI, apres sndhplay%/sp3%/font%, pour ne plus les chevaucher
+  ADD total_size%,200000
+  .///////////////////////////////////
+  .
+  ' +256 : log% arrondit mem_block% vers le HAUT (video shifter), donc la derniere
+  ' adresse utilisee est log%+total_size%, soit jusqu a 255 octets au dela de
+  ' mem_block%+total_size%. Sans cette marge, on ecrit hors du bloc alloue.
+  mem_block%=MALLOC(total_size%+256) ! reserve global buffer for all files & specific sub buffers for sequential memory attribution
+  IF mem_block%<=0
+    IF NOT compiled!
+      RESERVE
+    ENDIF
+    EDIT
+  ENDIF
+  ' Set all needed buffers address from big malloc
+  log%=(mem_block%+255) AND &HFFFFFF00 ! Stf compatible adress for video shifter
+  pal%=log%+32256           ! current palette
+  stzpal%=pal%+32           ! black palette
+  savpal%=stzpal%+32        ! save palette
+  lowborderm%=savpal%+32    ! 22 lignes lowborder or erase buffer
+  fmask%=lowborderm%+22*160 ! 8 lines for mask for font display fx
+  pic%=fmask%+8*160         ! buffer to load current picture 32000+34 (full pi1 - to remove once better load pi1 proc )
+  ' tune% n'est PLUS ici (pic%+32034) : cette adresse tombait exactement sur sndhplay%,
+  ' donc chaque chargement de musique (jusqu'a 75Ko observes) ecrasait le lecteur sndh
+  ' et la fonte. tune% est maintenant defini plus bas, juste apres font%.
+  ' Base log% et NON mem_block% : les tampons ecran ci-dessus partent de log%
+  ' (arrondi) alors que ceux-ci partaient de mem_block% (non arrondi). Or
+  ' cumul_size%(0) vaut exactement 69186, soit la longueur de la chaine ci-dessus.
+  ' Les deux chaines n etaient donc jointives que si MALLOC retournait deja une
+  ' adresse alignee sur 256 ; sinon la fin de pic% deborde de 0 a 255 octets sur
+  ' le DEBUT de sndhplay%, qui ne fait que 186 octets, donc sur ses points d entree.
+  ' Piste pour le symptome "pas de musique". Avec log% partout, les deux chaines
+  ' sont jointives par construction, quelle que soit l adresse rendue par MALLOC.
+  sndhplay%=log%+cumul_size%(0)         ! sndh player
+  sp3%=log%+cumul_size%(1)              ! sp3 rout depacker
+  font%=log%+cumul_size%(2)         ! 8x8x4c font 16*160
+  tune%=font%+16*160        ! buffer for current music (juste apres la fonte, 200000 octets reserves plus haut)
+  '
+  '  ~GRAF_MOUSE(256,0) ! =OUT 4,18 hide mouse (hidem don't work with patched libs)
+  OUT 4,18
+  ' Saves
+  oldrez&=XBIOS(4)  ! save reso
+  oldlog%=XBIOS(3) ! save logical screen adress "NONONONONONONO"
+  oldphy%=XBIOS(2) ! save logical screen adress
+  phy%=oldphy%
+  ~XBIOS(5,L:phy%,L:phy%,-1) ! set the screens at these new adresses in st low reso
+  @super
+  ./ create empty pal
+  LONG{stzpal%+0}=0
+  LONG{stzpal%+4}=0
+  LONG{stzpal%+8}=0
+  LONG{stzpal%+12}=0
+  BMOVE stzpal%,stzpal%+16,16
+  ./////////////////////////////////////
+  ' DIM tableaux regroupees amont = limitation garbage collector or bugs with DIM in functions or procedures ??
+  DIM regsndh%(16) ! Pour la routine SNDH player
+  DIM r&(16),v&(16),b&(16),dr(16),dv(16),db(16) ! initial + final rvb components for fadeon/off procedure
+  DIM ipal&(16) ! intermediate calculated pal
+  '
+  DIM vdicol|(16)
+  '
+  DIM lignes&(200) ! for text shuffle
+  ' v 4 bombs executing this v why ?!! 64000<65536 !
+  ' DIM pic_colors|(64000) ! for scan_pic_for_color ! je voulais l eviter, mais 4 bombes... pas de card ou long adr imp pourtant, plantage des lancment prog ??!!!
+  DIM freq%(16) ! for scan_pic_for_color
+  DIM pnh&(8),pnv&(8) ! taille de bloc horizontale / verticale par niveau
+  DIM ordre&(1000) ! ordre de devoilement pour @random_pixels (2 Ko)
+  DIM rcniv&(8) ! tailles de bloc de @dezoom.rc
+  RESTORE rc.niveaux
+  FOR i&=0 TO 8
+    READ rcniv&(i&)
+  NEXT i&
+  @pixinit
+  pix.duree&=6000 ! duree de la revelation en trames : 6000 / 50 Hz = 120 s
+  '
+  ' ////////////////////////////////
+  a|=BYTE{&HFF820D}
+  BYTE{&HFF820D}=15
+  b|=BYTE{&HFF820D}
+  BYTE{&HFF820D}=a|
+  IF a|<>b|  ! If Ste or Falcon (not STf not TT)
+    blitter(TRUE)
+  ENDIF
+  BMOVE &HFFFF8240,savpal%,32
+  key|=BYTE{&H484}                  ! save keyboard
+  inter|=BYTE{&HFFFA09}             ! save interrupts
+  BYTE{&H484}=BYTE{&H484} AND &HFE  ! keyboad sound off
+  CLIP 0,0,320,200      ! required for patched libs otherwise gfx are not visible
+  ON ERROR GOSUB bye    ! hope this doesn't slow program
+  ON BREAK GOSUB bye    ! to avoid disagreements in case...    !<
+  @vdicol
+RETURN
+.
+' !>
+> PROCEDURE screen.opening(pic%)
+  ' screen opening
+  CLS
+  stab
+  CLS
+  ~XBIOS(6,L:pal%)
+  COLOR 15
+  DEFFILL 15
+  FOR x|=1 TO 159 STEP 4
+    PELLIPSE 159,99,x|,2
+    stab
+  NEXT x|
+  CLS
+  stab
+  CLS
+  y2|=99
+  FOR y|=100 TO 199
+    BMOVE pic%+t160&(y|),log%+t160&(y|),320
+    BMOVE pic%+t160&(y2|),log%+t160&(y2|),320
+    LINE 0,y2|-2,319,y2|-2
+    LINE 19,y2|-3,300,y2|-3
+    LINE 149,y2|-4,169,y2|-4
+    LINE 0,y|+2,319,y|+2
+    LINE 19,y|+3,300,y|+3
+    LINE 149,y|+4,169,y|+4
+    DEC y2|
+    stab
+  NEXT y|
+  BMOVE pic%,log%,32000
+  BMOVE pic%,phy%,32000                                        !<
+RETURN
+.
+' !>
+PROCEDURE intro_quizz
+  display.bitmap.txt("BIENVENUE AU QUIZZ MUSICAL ADN 2026",20,10,TRUE,TRUE,FALSE)
+  display.bitmap.txt("PRET A DEVINER ?",64,135,TRUE,TRUE,FALSE)
+  display.bitmap.txt("OUVREZ GRAND VOS OREILLES !",80,150,TRUE,TRUE,FALSE)
+  display.bitmap.txt("C EST PARTI !",10,165,TRUE,TRUE,FALSE)
+  display.bitmap.txt("APPUYER SUR ENTREE",165,165,TRUE,TRUE,FALSE)
+RETURN
+.
+' !>
+PROCEDURE quizz
+  ' WIP
+  ' Etapes avec passage controle clavier  (SPACE>STEP - ENTER>NEXT TUNE - BACKSPACE>PREVIOUS TUNE):
+  ' 1) juste la musique sans image
+  ' 2) l'image tres brouillee  (v Transition brouillee / net  progressive dont le timing est a definir)
+  ' 3) l'image non brouillee
+  ' 4) l'image avec le texte dessus  (centre : TITRE  ->  CR  -> description)
+  ' 5) Modif fonte 8x8 en 1 plan avec outline
+  '
+  ' from quizz title quizz
+  REPEAT
+    matouche&=BYTE{&HFFFC02}
+    VSYNC
+  UNTIL matouche&=&H1C ! IF RETURN PRESSED
+  FOR file&=0 TO nb_files_max&-1
+    BMOVE log%,phy%,32000 ! copy log to phy
+    ' WAIT for ENTER or BACKSPACE
+    ' ~XBIOS(5,L:log%,L:phy%,-1) ! on repasse en double bufffer pour scanner log pendant vision phy
+    @ldpic(pic_fname$(file&),pic%,FALSE) ! load picture matching with current music
+    @set_text_colors ! pick ink/box colours from this track picture palette
+    ' BMOVE pic%,log%,32000 !
+    ' scan_pic_for_color(TRUE)
+    ' ~XBIOS(5,L:phy%,L:phy%,-1)  ! on arrête le double écran
+    @fadeoff
+    ' BMOVE pic%,phy%,32000
+    @clearpal
+    @sndh.off
+    BLOAD sndh_fname$(file&),tune%
+    RC_COPY log%,0,0,320,200 TO log%,0,0,0 ! clear screens
+    RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
+    @sndh(tune%) ! musique seule...
+    ' Affichage progressif par etapes
+    @dboff ! screen double buffer off (basic fx)
+    ' @ldpic(pic_fname$(file&),pic%,FALSE) ! load picture matching with current music
+    @fadeon ! color fading up
+    ' progressive animation / fx from very pixelated picture, to perfect pixel
+    ' Effets de revelation, enchaines et reordonnables ici. @scrambling etait
+    ' auparavant appele DEPUIS pixelisation ; le sortir permet d'alterner les
+    ' effets d'un morceau a l'autre sans toucher aux procedures.
+    ' Alternance des effets de revelation, un par morceau. Les quatre effets
+    ' partagent l'interface (duree&) en trames et finissent en dissolve si
+    ' l'espace est presse.
+    SELECT MOD(file&,4)
+    CASE 0
+      @pixelisation(pix.duree&)
+    CASE 1
+      @scrambling(pix.duree&)
+    CASE 2
+      @dezoom.rc(600) ! budget d'attente modeste : cet effet est lent par nature
+    CASE 3
+      @random_pixels(pix.duree&)
+    ENDSELECT
+    @fadereg0 ! monte la couleur de fond une fois l'image dessinee (cf. fadeon)
+    ' @scrambling
+    ' display answer bitmap text on 2 lines : 1 : Artist Name  2 : Music Name
+    @dboff ! screen double buffer off (basic fx)
+    @answer_display(answer1$(file&),answer2$(file&))
+    REPEAT
+      matouche&=BYTE{&HFFFC02}
+      VSYNC
+    UNTIL matouche&=&H1C OR matouche&=&HE ! IF RETURN or BACKSPACE PRESSED
+    IF matouche&=&HE ! SI BACKSPACE ! back to previous track
+      DEC file&
+      DEC file& ! decreasing twice as we need to go before the previous track as it will be increased on NEXT
+      IF file&<-1 ! if we were already on the first track
+        file&=-1
+      ENDIF
+    ENDIF
+  NEXT file& ! next music to guess
+  @sndh.off
+  BLOAD "DATA\ATRISTST.SND",tune%
+  @ldpic("DATA\FIREWORK.PI1",pic%,FALSE)
+  @set_text_colors ! pick ink/box colours from the fireworks picture palette
+  @fadeoff
+  @clearpal
+  RC_COPY log%,0,0,320,200 TO log%,0,0,0 ! clear screens
+  RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
+  @sndh(tune%)
+  @screen.opening(pic%)
+  display.bitmap.txt("C EST FINI !",80,30,TRUE,TRUE,FALSE)
+  display.bitmap.txt("MERCI POUR VOTRE PARTICIPATION !",20,50,TRUE,TRUE,FALSE)
+  display.bitmap.txt("ET BRAVO",20,65,TRUE,TRUE,FALSE)
+  display.bitmap.txt("POUR LES REPONSES TROUVEES !",60,75,TRUE,TRUE,FALSE)
+  display.bitmap.txt("QUIZZ CODE BY:  HYLST",20,100,TRUE,TRUE,FALSE)
+  display.bitmap.txt("CODE SUPPORT BY:  TOMCHI",20,115,TRUE,TRUE,FALSE)
+  display.bitmap.txt("QUIZZ TRACKS BY:  AD  AND  DMA SC",20,130,TRUE,TRUE,FALSE)
+  display.bitmap.txt("INTRO MUSIC BY:  JESS",20,145,TRUE,TRUE,FALSE)
+  display.bitmap.txt("THIS MUSIC BY:  AD",20,160,TRUE,TRUE,FALSE)
+  display.bitmap.txt("FONT BY:  HYLST",20,175,TRUE,TRUE,FALSE)
+  REPEAT
+    matouche&=BYTE{&HFFFC02}
+    VSYNC
+  UNTIL matouche&=&H1C ! IF RETURN PRESSED
+  @sndh.off
+  @fadeoff
+  RC_COPY log%,0,0,320,200 TO log%,0,0,0 ! clear screens
+  RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
+  @fadeon
+  display.bitmap.txt("IT S NOW SAFE TO TURN OFF YOUR COMPUTER",4,80,TRUE,TRUE,FALSE)
+  REPEAT
+  UNTIL 1=2
+RETURN
+.
+' !>
+PROCEDURE bye
+  @dboff
+  ~XBIOS(6,L:savpal%) ! restore pal
+  BYTE{&H484}=key|    ! restore keyboard
+  BYTE{&HFFFA09}=inter|  !  restore interrupts
+  ~GEMDOS(32,L:sup%) ! user mode on
+  ' DEBUG TEMPORAIRE : affiche le code d'erreur GFA qui a declenche bye.
+  ' A retirer une fois le bug de l'ecran noir identifie.
+  ALERT 1,"ERR "+STR$(ERR)+"|"+ERR$(ERR)+"|au step:"+chk$,1,"OK",choix_err&
+  ' ~GRAF_MOUSE(257,0) ! =OUT 4,8 show mouse (showm don't work with patched libs)
+  OUT 4,8
+  IF NOT compiled!
+    RESERVE
+  ENDIF
+  EDIT                                             !<
+RETURN
+.
+.*************************************************************************************************
+.
+.
+' !>
+PROCEDURE display.bitmap.txt(text$,xb&,yb&,horizontal!,bg_erase!,center!)
+  ' DISPLAY TEXT AT X, Y COORDINATES (UP-LEFT) WITH BITMAP FONT
+  ' ! no clipping ! one line only (no carriage return) bombs if text >39 chars
+  ' lost machine time should be use for precalc or have to put under interrupt
+  ' centrage
+  len.text&=PRED(LEN(text$))
+  IF len.text&>38
+    text$=LEFT$(text$,38)  ! tronquage...
+    len.text&=PRED(LEN(text$)) ! max 40 chars
+  ENDIF
+  IF center!
+    xb&=160-(len.text&+1)*char.width&/2
+  ENDIF
+  IF bg_erase!
+    area.lines.erase(xb&-2,yb&-2,xb&+(1+len.text&)*char.width&+2,yb&+char.height&) ! erase area for text
+  ENDIF
+  ' Boucles INVERSEES : l'etat du rideau est desormais la boucle externe, et
+  ' tous les caracteres sont dessines a chaque etat. Auparavant chaque lettre
+  ' faisait ses 8 etats avec un stab a chacun, soit 8 trames par lettre : une
+  ' ligne de 30 caracteres coutait 240 trames, presque 5 secondes. Le rideau
+  ' est maintenant global : 8 trames pour la ligne entiere.
+  ' Pour revenir a l'apparition lettre par lettre, il suffit de remettre la
+  ' boucle char& a l'exterieur et le stab a l'interieur.
+  cx&=0
+  FOR m.appear&=0 TO 7*8 STEP 8
+    cx&=xb&
+    cy&=yb&
+    FOR char&=1 TO SUCC(len.text&)
+      pos.char&=PRED(INSTR(font.chars$,MID$(text$,char&,1)))
+      IF (pos.char&<43)
+        IF horizontal!
+          RC_COPY fmask%,m.appear&,0,8,8 TO log%,cx&,yb&
+          RC_COPY font%,bitmap.char.x&(pos.char&),bitmap.char.y&(pos.char&),char.width&,char.height& TO log%,cx&,yb&,1
+        ELSE
+          RC_COPY fmask%,m.appear&,0,8,8 TO log%,xb&,cy&
+          RC_COPY font%,bitmap.char.x&(pos.char&),bitmap.char.y&(pos.char&),char.width&,char.height& TO log%,xb&,cy&,1
+        ENDIF
+      ENDIF
+      ' avance par addition plutot que MUL(PRED(char&),char.width&)
+      ADD cx&,char.width&
+      ADD cy&,char.width&
+    NEXT char&
+    stab
+  NEXT m.appear&                                               !<
+RETURN
+.
+' !>
+PROCEDURE ldpic(fname$,adr%,spk!)
+  IF spk!
+    BLOAD fname$,adr% ! for speedpacker decrunch
+    ' spk ! speed packer decrunching
+    BMOVE adr%+2,pal%,32
+    BMOVE adr%+34,adr%,32000
+  ELSE
+    OPEN "I",#1,fname$
+    SEEK #1,2                  ! skip resolution
+    BGET #1,pal%,32            ! load palette of picture
+    SEEK #1,34
+    BGET #1,adr%,32000         ! load actual picture
+    CLOSE #1
+  ENDIF                        !<
+RETURN
+.
+' !>
+PROCEDURE dysplay_text_shuffle(background%,text%)
+  FOR i&=0 TO 199
+    lignes&(i&)=i&
+  NEXT i&
+  ' Melange de Fisher-Yates
+  FOR i&=199 TO 1 STEP -1
+    j&=RANDOM(i&)
+    SWAP lignes&(i&),lignes&(j&)
+  NEXT i&
+  ' Copier l’image de fond dans les deux buffers une fois
+  RC_COPY background%,0,0,320,200 TO log%,0,0,7
+  RC_COPY background%,0,0,320,200 TO phy%,0,0,7
+  ' --- Boucle d’affichage progressif
+  i&=0
+  WHILE i&<200
+    y&=lignes&(i&)
+    ' Ajouter la ligne courante
+    RC_COPY text%,0,y&,320,1 TO log%,0,y&,7
+    IF i&>0
+      yprev&=lignes&(i&-1)
+      RC_COPY text%,0,yprev&,320,1 TO log%,0,yprev&,7
+    ENDIF
+    ' Affichage synchro
+    VSYNC
+    ~XBIOS(5,L:log%,L:phy%,-1)
+    SWAP log%,phy%
+    INC i&
+  WEND
+RETURN
+'
+PROCEDURE tatouche
+  tatouche&=BYTE{&HFFFFC02}
+  IF tatouche&=&H39
+    pixl_exit&=1
+  ENDIF
+RETURN
+'
+PROCEDURE pixinit
+  LOCAL o&
+  RESTORE pix.niveaux
+  FOR o&=0 TO 8
+    READ pnh&(o&),pnv&(o&)
+  NEXT o&
+pix.niveaux:
+  DATA 16,16,16,8,8,8,8,4,4,4,4,2,2,2,2,1,1,1
+RETURN
+.
+' !>
+PROCEDURE pixdraw(nh&,nv&)
+  ' Construit dans log% la version de pic% pixelisee en blocs nh& x nv&.
+  '
+  ' HORIZONTAL : un masque plus des decalages, au MOT. Les tables d'octets
+  ' precedentes demandaient 160 iterations par ligne ; on en fait 80. Le
+  ' principe : le masque isole le bit de gauche de chaque bloc, les OR
+  ' decales le recopient sur les bits a sa droite. Equivalence verifiee sur
+  ' 20000 mots aleatoires pour les blocs de 2, 4 et 8.
+  '
+  ' VERTICAL : replication par DOUBLEMENT. Pour 16 lignes, 4 BMOVE (1, 2, 4,
+  ' 8 lignes) au lieu de 15 de 160 octets : meme volume deplace, mais quatre
+  ' fois moins d'appels.
+  '
+  ' Le niveau 1x1 est un simple BMOVE de 32000 octets, au lieu de 200 BMOVE
+  ' de 160.
+  LOCAL yy&,i&,nl&,c&,d&,sl%,dl%,w%
+  IF nh&=1 AND nv&=1
+    BMOVE pic%,log%,32000
+  ELSE
+    dl%=log%
+    FOR yy&=0 TO 199 STEP nv&
+      sl%=pic%+t160&(yy&)
+      IF nh&=16
+        FOR i&=0 TO 158 STEP 2
+          IF (CARD{sl%+i&} AND &H8000)
+            CARD{dl%+i&}=&HFFFF
+          ELSE
+            CARD{dl%+i&}=0
+          ENDIF
+        NEXT i&
+      ELSE IF nh&=8
+        FOR i&=0 TO 158 STEP 2
+          w%=CARD{sl%+i&} AND &H8080
+          w%=w% OR SHR(w%,1)
+          w%=w% OR SHR(w%,2)
+          CARD{dl%+i&}=w% OR SHR(w%,4)
+        NEXT i&
+      ELSE IF nh&=4
+        FOR i&=0 TO 158 STEP 2
+          w%=CARD{sl%+i&} AND &H8888
+          w%=w% OR SHR(w%,1)
+          CARD{dl%+i&}=w% OR SHR(w%,2)
+        NEXT i&
+      ELSE IF nh&=2
+        FOR i&=0 TO 158 STEP 2
+          w%=CARD{sl%+i&} AND &HAAAA
+          CARD{dl%+i&}=w% OR SHR(w%,1)
+        NEXT i&
+      ELSE
+        BMOVE sl%,dl%,160 ! nh&=1 : la ligne source telle quelle
+      ENDIF
+      ' replication verticale par doublement, bornee a la fin de l'ecran
+      nl&=nv&
+      IF yy&+nl&>200
+        nl&=200-yy&
+      ENDIF
+      c&=1
+      WHILE c&<nl&
+        d&=c&
+        IF c&+d&>nl&
+          d&=nl&-c&
+        ENDIF
+        BMOVE dl%,dl%+MUL(c&,160),MUL(d&,160)
+        ADD c&,d&
+      WEND
+      ADD dl%,MUL(nv&,160)
+    NEXT yy&
+  ENDIF
+RETURN
+.
+' !>
+PROCEDURE pixelisation(duree&)
+  ' Revelation progressive de l'image, du plus gros bloc au pixel pres.
+  '
+  ' NEUF niveaux (cf. @pixinit) et VINGT bandes revelees par niveau, soit
+  ' 180 etapes visibles. Avec pix.duree&=6000 trames (120 s) cela fait une
+  ' modification a l'ecran toutes les 0,67 s.
+  '
+  ' Le niveau complet est construit hors ecran dans log%, puis devoile bande
+  ' par bande vers phy% (l'ecran visible, cf. @dboff). Aucun stab ici : les
+  ' deux tampons ne doivent pas s'echanger pendant la revelation, sinon les
+  ' bandes deja devoilees disparaitraient.
+  '
+  ' Le sens de balayage alterne d'un niveau a l'autre pour eviter l'effet
+  ' de volet repetitif. Espace = passage immediat a l'image nette.
+  LOCAL niv&,bande&,b2&,tenue&,off%
+  pixl_exit&=0
+  tenue&=DIV(duree&,180) ! 9 niveaux x 20 bandes
+  FOR niv&=0 TO 8
+    @pixdraw(pnh&(niv&),pnv&(niv&))
+    FOR bande&=0 TO 19
+      IF EVEN(niv&)
+        b2&=bande&
+      ELSE
+        b2&=19-bande&
+      ENDIF
+      @pixhold(tenue&)
+      EXIT IF pixl_exit&=1
+      off%=MUL(b2&,1600) ! 10 lignes de 160 octets
+      BMOVE log%+off%,phy%+off%,1600
+    NEXT bande&
+    EXIT IF pixl_exit&=1
+  NEXT niv&
+  ' espace : on n'affiche pas l'image d'un coup, on la revele en dissolve
+  IF pixl_exit&=1
+    @dissolve.to.pic(100) ! 100 trames = 2 s
+  ELSE
+    BMOVE pic%,phy%,32000
+    BMOVE pic%,log%,32000
+  ENDIF
+RETURN
+.
+' !>
+PROCEDURE dezoom.rc(duree&)
+  ' Effet 3 : dezoom par RC_COPY. C'est la procedure d'ORIGINE du programme,
+  ' restauree ici sous un nom distinct pour pouvoir alterner avec les autres,
+  ' au lieu d'etre remplacee comme elle l'avait ete par erreur.
+  '
+  ' Sa signature visuelle : elle recopie un bloc SOURCE de 4x4 pixels et le
+  ' pave, au lieu de repliquer un seul pixel. D'ou la deformation
+  ' caracteristique, differente du dezoom net de @pixdraw. C'est voulu, c'est
+  ' tout l'interet de garder les deux.
+  '
+  ' Elle est intrinsequement LENTE : environ 4500 RC_COPY par niveau, tous
+  ' passant par le VDI, et cela ne peut pas etre accelere. duree& est donc un
+  ' budget d'ATTENTE reparti entre les niveaux, auquel s'ajoute le temps de
+  ' dessin : passer une valeur modeste, voire 0.
+  '
+  ' L'espace bascule sur @dissolve.to.pic : c'est le seul moyen de terminer
+  ' vite tout en restant progressif.
+  ' L'unite recopiee est un bloc SOURCE de 4x4 : des que taille& vaut 4, la
+  ' copie est EXACTE et l'image est deja parfaite. Les anciens niveaux 2 et 1
+  ' refaisaient donc 16000 puis 64000 RC_COPY sans changer un seul pixel --
+  ' l'effet semblait travailler dans le vide, et deux des six niveaux etaient
+  ' perdus. L'echelle s'arrete maintenant a 4, et compte neuf paliers tous
+  ' multiples de 4 (tuilage exact) au lieu de six dont quatre utiles.
+  LOCAL cycle&,taille&,x&,y&,i&,j&,bh&,bl&,tenue&
+  tenue&=DIV(duree&,9)
+  pixl_exit&=0
+  FOR cycle&=0 TO 8
+    taille&=rcniv&(cycle&)
+    FOR y&=0 TO 199 STEP taille&
+      bh&=taille&
+      IF y&+bh&>200
+        bh&=200-y&
+      ENDIF
+      FOR x&=0 TO 319 STEP taille&
+        bl&=taille&
+        IF x&+bl&>320
+          bl&=320-x&
+        ENDIF
+        FOR j&=0 TO PRED(bh&) STEP 4
+          FOR i&=0 TO PRED(bl&) STEP 4
+            RC_COPY pic%,x&,y&,4,4 TO phy%,x&+i&,y&+j&
+          NEXT i&
+        NEXT j&
+      NEXT x&
+      ' @tatouche une fois par rangee de blocs, et non dans les deux boucles
+      ' les plus internes comme a l'origine.
+      @tatouche
+      EXIT IF pixl_exit&=1
+    NEXT y&
+    EXIT IF pixl_exit&=1
+    @pixhold(tenue&)
+    EXIT IF pixl_exit&=1
+  NEXT cycle&
+  IF pixl_exit&=1
+    @dissolve.to.pic(100)
+  ELSE
+    BMOVE pic%,phy%,32000
+    BMOVE pic%,log%,32000
+  ENDIF
+rc.niveaux:
+  DATA 48,40,32,24,20,16,12,8,4
+RETURN
+.
+' !>
+PROCEDURE dissolve.to.pic(trames&)
+  ' Devoile pic% ligne par ligne, dans un ordre aleatoire, en trames& trames.
+  '
+  ' Fin progressive COMMUNE a tous les effets : appuyer sur espace ne fait
+  ' jamais apparaitre l'image d'un coup, l'effet en cours est abandonne et
+  ' l'image se revele en dissolve sur 2 secondes.
+  '
+  ' Utile en particulier pour les effets naturellement lents (dezoom RC_COPY)
+  ' qui ne peuvent pas etre acceleres : on ne les accelere pas, on bascule sur
+  ' cette revelation-ci, qui reste progressive et de duree connue.
+  LOCAL i&,r&,temp&,k&,parlot&,n&
+  FOR i&=0 TO 199
+    lignes&(i&)=i&
+  NEXT i&
+  ' ordre de devoilement aleatoire (Fisher-Yates)
+  FOR i&=199 TO 1 STEP -1
+    r&=RANDOM(i&)
+    temp&=lignes&(i&)
+    lignes&(i&)=lignes&(r&)
+    lignes&(r&)=temp&
+  NEXT i&
+  parlot&=DIV(200,trames&) ! lignes devoilees par trame
+  IF parlot&<1
+    parlot&=1
+  ENDIF
+  n&=0
+  WHILE n&<200
+    VSYNC
+    FOR k&=1 TO parlot&
+      IF n&<200
+        i&=lignes&(n&)
+        BMOVE pic%+t160&(i&),phy%+t160&(i&),160
+        INC n&
+      ENDIF
+    NEXT k&
+  WEND
+  BMOVE pic%,phy%,32000
+  BMOVE pic%,log%,32000
+RETURN
+.
+' !>
+PROCEDURE pixhold(trames&)
+  ' Attente interruptible : rend la main des que l'espace est presse.
+  LOCAL k&
+  FOR k&=1 TO trames&
+    VSYNC
+    @tatouche
+    EXIT IF pixl_exit&=1
+  NEXT k&
+RETURN
+.
+' !>
+PROCEDURE answer_display(answer1$,answer2$)
+  REPEAT
+    matouche&=BYTE{&HFFFC02}
+    VSYNC
+  UNTIL matouche&=&H39 ! IF SPACE PRESSED
+  display.bitmap.txt(answer1$,32,130,TRUE,TRUE,TRUE)
+  display.bitmap.txt(answer2$,32,150,TRUE,TRUE,TRUE)
+  ' wait_key(&H39)   ! wait for SPACE
+RETURN
+.
+.
+.
+.
+' !>
+PROCEDURE sndh(tune%)
+  ' SNDH Replayer for GFA
+  ' Original by Swe/YesCrew
+  ' Modified version by gwEm
+  '  IF NOT DIM?(regsndh%())
+  ' ENDIF
+  regsndh%(14)=tune% ! mym
+  regsndh%(7)=50
+  RCALL sndhplay%+28,regsndh%()                                 !<
+RETURN
+.
+' !>
+PROCEDURE sndh.off
+  '
+  sndhstop%=sndhplay%+32
+  ~C:sndhstop%()
+  {&H4D2}=0  ! music off
+  WAVE 0,0   ! sound off                    !<
+RETURN
+.
+.
+.
+.
+.
+.*************************************************************************************************
+' !>
+PROCEDURE get_slide_filenames
+  .
+  ' Get & Store music, picture, answer text x2 for slide show loop
+  RESTORE quizz
+  READ nb_files&
+  nb_files_max&=nb_files&
+  ' ERASE file_name$()
+  DIM pic_fname$(nb_files&),sndh_fname$(nb_files&),answer1$(nb_files&),answer2$(nb_files&)
+  DEC nb_files&
+  FOR file&=0 TO nb_files&
+    READ fname$
+    sndh_fname$(file&)=fname$
+    READ fname$
+    pic_fname$(file&)=fname$
+    READ fname$
+    answer1$(file&)=fname$
+    READ fname$
+    answer2$(file&)=fname$
+    '  print file&
+    '  print sndh_fname$(file&)
+    '  print pic_fname$(file&)
+    '  print answer1$(file&)
+    '  print answer2$(file&)
+    '  ~INP(2)
+    '  CLS
+  NEXT file& !<
+RETURN
+.
+' !>
+PROCEDURE pmul160
+  ' for BMOVES, CARD and others...
+  DIM t160&(200)
+  t160&(0)=0
+  FOR y&=1 TO 199
+    t160&(y&)=ADD(160,t160&(PRED(y&)))
+  NEXT y&                                         !<
+RETURN
+.
+' !>
+PROCEDURE prepfont(mono!)
+  ' prepare bitmap font for display rout
+  ' assume bitmap data address pointer is at font% and fmask% is reserved
+  ' ADAPTATIVE PROCEDURE
+  char.width&=8
+  char.height&=8
+  font.chars$="!.,/0123456789:;?ABCDEFGHIJKLMNOPQRSTUVWXYZ "
+  len.font&=LEN(font.chars$)
+  IF mono!
+    BMOVE font%,phy%,16*160
+    FOR y&=0 TO char.height&*2-1
+      FOR x&=0 TO 320-1
+        IF PTST(x&,y&)>0
+          PSET x&,y&,1
+        ENDIF
+      NEXT x&
+    NEXT y&
+    BMOVE phy%,font%,16*160
+  ENDIF
+  DIM bitmap.char.x&(len.font&),bitmap.char.y&(len.font&) ! base of each char coordinate
+  FOR char&=0 TO PRED(len.font&)
+    ' bitmap.char.adr%(char&)=ADD(phy%,MUL(TRUNC(char&/char.per.line&),offset.char.line%))
+    offset&=MUL(char&,char.width&)
+    bitmap.char.x&(char&)=MOD(offset&,320)
+    bitmap.char.y&(char&)=MUL(char.height&,TRUNC(DIV(offset&,320)))
+  NEXT char&
+  ' creation 'masque' affichage pour display rideau
+  ' COLOR 1 est correct ici (et non 15) : COLOR utilise un index VDI, pas
+  ' le registre materiel directement. Sur ST, l'index VDI 1 correspond au
+  ' registre materiel 15 (voir table de vdicol|() plus bas / DATA vdicolours),
+  ' donc COLOR 1 dessine bien avec les 4 plans de bits a 1 (1111), ce qui
+  ' est ce qu'il faut pour laisser passer la vraie couleur de la fonte via
+  ' le ET logique de RC_COPY (mode 1) plus bas dans display.bitmap.txt
+  COLOR 1
+  FOR eff&=0 TO 7
+    LINE 0,0,eff&,7
+    LINE 7,7,7-eff&,0
+    RC_COPY phy%,0,0,8,8 TO fmask%,eff&*8,0
+  NEXT eff&                                                        !<
+RETURN
+.
+' !>
+PROCEDURE base_files_load
+  BLOAD file_name$(0),sndhplay%
+  BLOAD file_name$(1),sp3%
+  BLOAD file_name$(2),font%
+  BLOAD file_name$(3),tune%
+  ' Start pic load
+  RESTORE intro_pic
+  READ intro_pic_name$
+  ldpic(intro_pic_name$,pic%,FALSE)  !<
+RETURN
+.
+.
+.
+.*************************************************************************************************
+.
+' !>
+PROCEDURE clearpal
+  ' all colours to 0
+  BMOVE stzpal%,&HFFFF8240,32               !<
+RETURN
+.
+' !>
+PROCEDURE clampcol
+  ' Borne cr&/cv&/cb& puis les reencode en quartets STE dans nr&/nv&/nb&.
+  '
+  ' Bornage : l'expression x-(x/7)*it& passe par le flottant. A la premiere
+  ' etape (it&=7) elle doit rendre 0 mais peut rendre une valeur infime
+  ' negative. Un cr& a -1 devenait $FFFF, et SHL(cr&,8) allumait alors des
+  ' bits dans les quartets voisins : d'ou le flash blanc observe.
+  '
+  ' Encodage STE : quartet = (LSB en bit 3) + (3 bits de poids fort).
+  ' Sur STF le bit 3 est ignore par le materiel, la valeur reste correcte.
+  IF cr&<0
+    cr&=0
+  ENDIF
+  IF cv&<0
+    cv&=0
+  ENDIF
+  IF cb&<0
+    cb&=0
+  ENDIF
+  IF cr&>15
+    cr&=15
+  ENDIF
+  IF cv&>15
+    cv&=15
+  ENDIF
+  IF cb&>15
+    cb&=15
+  ENDIF
+  nr&=SHL&((cr& AND 1),3)+SHR&(cr&,1)
+  nv&=SHL&((cv& AND 1),3)+SHR&(cv&,1)
+  nb&=SHL&((cb& AND 1),3)+SHR&(cb&,1)
+RETURN
+.
+PROCEDURE fadeoff
+  paloff%=&HFFFF8240
+  ' fadeoff palette
+  ' Take care : using floatint point var !
+  FOR c&=0 TO 15 ! decode & store rvb components
+  ' Decodage STE : le 4e bit de chaque composante est le bit de POIDS FAIBLE,
+  ' mais il est stocke en TETE du quartet (....rRRR gGGGbBBB). L'ancien AND 7
+  ' jetait ce bit : le fondu travaillait sur 8 niveaux au lieu de 16 et ne
+  ' retombait pas exactement sur la couleur de l'image. Sur STF le materiel
+  ' ignore le bit 3, le comportement y reste donc correct.
+    col&=CARD{paloff%+c&+c&}
+    n&=SHR(col&,8) AND 15
+    r&(c&)=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+    n&=SHR(col&,4) AND 15
+    v&(c&)=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+    n&=col& AND 15
+    b&(c&)=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+  NEXT c&
+  ' Fondu SIMULTANE des trois composantes.
+  '
+  ' L'ancienne version baissait le rouge seul (ty&=0), puis le bleu (ty&=1),
+  ' puis le vert (ty&=2). L'ecran passait donc du noir au ROUGE, puis au
+  ' MAGENTA, et le vert arrivant en dernier sur un rouge et un bleu deja
+  ' pleins produisait une montee brutale vers le blanc : c'est le "flash"
+  ' observe. Trois phases de 8 pas chacune, ne bougeant qu'un canal,
+  ' expliquaient aussi le manque de fluidite.
+  '
+  ' Les trois composantes evoluent desormais ensemble : c'est une vraie
+  ' rampe de luminosite decroissante. 25 pas (0 a 24) pour conserver la duree d'origine
+  ' (24 VSYNC). MUL/DIV coutent ici ~1 ms par pas, negligeable dans une
+  ' trame de 20 ms -- et il n'y a plus aucun flottant, donc plus d'arrondi
+  ' imprevisible.
+  FOR i&=0 TO 24
+    j&=24-i&
+    FOR ii&=0 TO 15
+      cr&=DIV(ADD(MUL(r&(ii&),j&),12),24)
+      cv&=DIV(ADD(MUL(v&(ii&),j&),12),24)
+      cb&=DIV(ADD(MUL(b&(ii&),j&),12),24)
+      @clampcol
+      ipal&(ii&)=OR(SHL(nr&,8),OR(SHL(nv&,4),nb&))
+    NEXT ii&
+    VSYNC
+    FOR ii&=0 TO 15  ! change colours
+      CARD{&HFFFF8240+ii&+ii&}=ipal&(ii&)
+    NEXT ii&
+  NEXT i&
+  ' !<
+RETURN
+.
+' !>
+PROCEDURE fadereg0
+  ' Monte le seul registre 0, du noir vers sa valeur dans pal%.
+  ' Appele APRES pixelisation : l'image occupe deja l'ecran, seules les
+  ' zones de fond s'eclaircissent. 13 paliers suffisent, c'est discret.
+  LOCAL k&,w&,r0&,v0&,b0&
+  w&=CARD{pal%}
+  n&=SHR(w&,8) AND 15
+  r0&=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+  n&=SHR(w&,4) AND 15
+  v0&=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+  n&=w& AND 15
+  b0&=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+  FOR k&=0 TO 12
+    cr&=DIV(ADD(MUL(r0&,k&),6),12)
+    cv&=DIV(ADD(MUL(v0&,k&),6),12)
+    cb&=DIV(ADD(MUL(b0&,k&),6),12)
+    @clampcol
+    VSYNC
+    CARD{&HFFFF8240}=OR(SHL(nr&,8),OR(SHL(nv&,4),nb&))
+  NEXT k&
+RETURN
+.
+PROCEDURE fadeon
+  ' fadeon palette at adress pal%
+  ' Take care : using floatint point var !
+  ' DIM r&(16),v&(16),b&(16),dr(16),dv(16),db(16) ! final rvb component then fp offset
+  ' DIM ipal&(16) ! intermediate calculated pal
+  FOR c&=0 TO 15 ! decode & store rvb components
+  ' Decodage STE : le 4e bit de chaque composante est le bit de POIDS FAIBLE,
+  ' mais il est stocke en TETE du quartet (....rRRR gGGGbBBB). L'ancien AND 7
+  ' jetait ce bit : le fondu travaillait sur 8 niveaux au lieu de 16 et ne
+  ' retombait pas exactement sur la couleur de l'image. Sur STF le materiel
+  ' ignore le bit 3, le comportement y reste donc correct.
+    col&=CARD{pal%+c&+c&}
+    n&=SHR(col&,8) AND 15
+    r&(c&)=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+    n&=SHR(col&,4) AND 15
+    v&(c&)=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+    n&=col& AND 15
+    b&(c&)=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+  NEXT c&
+  ' Fondu SIMULTANE des trois composantes.
+  '
+  ' L'ancienne version montait le rouge seul (ty&=0), puis le bleu (ty&=1),
+  ' puis le vert (ty&=2). L'ecran passait donc du noir au ROUGE, puis au
+  ' MAGENTA, et le vert arrivant en dernier sur un rouge et un bleu deja
+  ' pleins produisait une montee brutale vers le blanc : c'est le "flash"
+  ' observe. Trois phases de 8 pas chacune, ne bougeant qu'un canal,
+  ' expliquaient aussi le manque de fluidite.
+  '
+  ' Les trois composantes evoluent desormais ensemble : c'est une vraie
+  ' rampe de luminosite. 25 pas (0 a 24) pour conserver la duree d'origine
+  ' (24 VSYNC). MUL/DIV coutent ici ~1 ms par pas, negligeable dans une
+  ' trame de 20 ms -- et il n'y a plus aucun flottant, donc plus d'arrondi
+  ' imprevisible.
+  ' Le registre 0 est EXCLU du fondu : au moment ou fadeon est appele,
+  ' l'ecran vient d'etre efface, il est donc entierement en couleur 0.
+  ' Faire monter ce registre revient a laver tout l'ecran de la couleur de
+  ' fond de l'image -- flagrant sur 10.PI1 (RGB 7,3,2), 29 et 08. Il est
+  ' monte separement par @fadereg0, apres que pixelisation a dessine
+  ' l'image : seules les zones de fond changent alors, ce qui est discret.
+  FOR i&=0 TO 24
+    FOR ii&=1 TO 15
+      ' ADD ...,12 = arrondi au plus proche. Avec la troncature, une
+      ' composante faible (2 sur 15) restait a 0 pendant la moitie du fondu
+      ' puis rattrapait d'un coup : d'ou un debut qui paraissait lent et une
+      ' fin rapide.
+      cr&=DIV(ADD(MUL(r&(ii&),i&),12),24)
+      cv&=DIV(ADD(MUL(v&(ii&),i&),12),24)
+      cb&=DIV(ADD(MUL(b&(ii&),i&),12),24)
+      @clampcol
+      ipal&(ii&)=OR(SHL(nr&,8),OR(SHL(nv&,4),nb&))
+    NEXT ii&
+    VSYNC
+    FOR ii&=1 TO 15  ! change colours
+      CARD{&HFFFF8240+ii&+ii&}=ipal&(ii&)
+    NEXT ii&
+  NEXT i&
+  ' ERASE ipal&(),r&(),v&(),b&(),dr(),dv(),db()                   !<
+RETURN
+.
+' !>
+PROCEDURE dboff
+  ' double buffering off
+  ~XBIOS(5,L:phy%,L:phy%,-1)      !<
+RETURN
+.
+' !>
+PROCEDURE stab
+  SWAP phy%,log% ! exchange adresses to display screen you just worked on
+  ~XBIOS(5,L:log%,L:phy%,-1) ! set the screens at these new adresses
+  '  CARD{&HFFFF8240}=&H421 ! to check which part of the vbl is used
+  VSYNC ! wait 4 whole screen to be displayed       !<
+RETURN
+.
+' !>
+PROCEDURE blitter(switch!)
+  status&=XBIOS(64,-1)
+  IF BTST(status&,1)           ! Blitter available?
+    IF switch!
+      status&=BSET(status&,0)   ! Blitter on
+    ELSE
+      status&=BCLR(status&,0)   ! Blitter off
+    ENDIF
+    ~XBIOS(64,status&)         ! do it
+  ENDIF !<
+RETURN
+.
+' !>
+PROCEDURE wait_key(code&)
+  ' &H39=SPACE  &H1C=RETURN  &H0E=BACKSPACE
+  ' Wait for specific key press & release
+  REPEAT
+  UNTIL BYTE{&HFFFC02}=code&
+  WHILE PEEK(&HFFFC02)=code&
+  WEND                                 !<
+RETURN
+.
+' !>
+PROCEDURE super
+  .
+  sup%=GEMDOS(32,L:0)                       !<
+RETURN
+.
+'  !>
+PROCEDURE user
+  .
+  ~GEMDOS(32,L:super%)                             !<
+RETURN
+.
+PROCEDURE pal.order.by.lum
+  ' create an array with color numbers indexed according to luminance (lighter to darker)
+  IF NOT DIM?(bas.pal&())
+    DIM bas.pal&(15),ord.pal&(15)
+  ENDIF
+  ' calcul moyennes comp rvb
+  FOR c&=0 TO 14
+    col&=CARD{&HFFFF8242+c&+c&}
+    r&=SHR(col&,8) AND 7
+    v&=SHR(col&,4) AND 7
+    b&=col& AND 7
+    bas.pal&(c&)=r&+v&+b&
+    ord.pal&(c&)=c&
+  NEXT c&
+  FOR c&=0 TO 14 !  pour chaque index de couleur
+    max&=-1
+    vax&=-1
+    FOR r&=0 TO 14 ! ' scan tableau pour trouver le + grand
+      IF bas.pal&(r&)>max&  ! si valeur + grande
+        max&=bas.pal&(r&) ! on enreg la valeur
+        vax&=r& ! ainsi que sa position
+      ENDIF
+      ord.pal&(c&)=vax& ! num de couleur correspondant � la lumi�re la+ intense
+      bas.pal&(vax&)=-2 ! -2 pour etre sur de ne pas la recomptabiliser
+    NEXT r&
+  NEXT c&
+  '  BMOVE V:bas.pal&(0),V:ord.oal&(0),15*2
+  ERASE bas.pal&()
+  '  QSORT ord.pal&(),15
+RETURN
+.
+PROCEDURE vdicol
+  ' use gemcol|(couleur) with deffill, defftext, defmark, color, etc.
+  ' to match vdi colours with linea or physical palette of video shifter &hffff8240
+  RESTORE vdicolours
+  FOR i|=0 TO 15
+    READ vdicol|(i|)
+  NEXT i|
+vdicolours:
+  DATA 0,2,3,6,4,7,5,8,9,10,11,14,12,15,13,1
+RETURN
+.
+PROCEDURE txt(x&,y&,t$,t!)
+  IF t!
+    VSETCOLOR 1,&H223
+    VSETCOLOR 2,&H334
+  ENDIF
+  DEFTEXT 1,16,1,15,15
+  TEXT x&,y&,t$
+  DEFTEXT 2
+  TEXT x&+1,y&+1,t$
+  CLR x&,y&,t$
+RETURN
+.
+FUNCTION cptst(x&,y&,adr_scr%)
+  LOCAL adr_ligne%,bloc_offset&,bitpos&,mask&,col&
+  adr_ligne%=adr_scr%+t160&(y&)+SHL&(SHR&(x&,4),3)
+  bitpos&=15-AND(x&,15)
+  mask&=SHL&(1,bitpos&)
+  col&=0
+  ' Plan 0 = 1er mot = bit de POIDS FAIBLE (LSB). Les poids etaient inverses
+  ' (plan 0 -> 8), ce qui rendait cptst/cpset coherents entre eux pour une
+  ' recopie de pixel, mais faux des qu on leur passe un vrai numero de
+  ' registre : recolor_font(ink_col&) peignait la fonte en bit-inverse
+  ' (1->8, 2->4, 4->2). Seuls 0, 6, 9 et 15 etaient invariants - d ou une
+  ' fonte d origine en 15 qui semblait correcte.
+  IF (CARD{adr_ligne%} AND mask&)
+    col&=col& OR 1
+  ENDIF
+  IF (CARD{adr_ligne%+2} AND mask&)
+    col&=col& OR 2
+  ENDIF
+  IF (CARD{adr_ligne%+4} AND mask&)
+    col&=col& OR 4
+  ENDIF
+  IF (CARD{adr_ligne%+6} AND mask&)
+    col&=col& OR 8
+  ENDIF
+  RETURN col&
+ENDFUNC
+.
+PROCEDURE cpset(x&,y&,adr_scr%,color|)
+  LOCAL adr_ligne%,bloc_offset&,bitpos&,mask&,notmask&
+  adr_ligne%=adr_scr%+t160&(y&)+SHL&(SHR&(x&,4),3)
+  mask&=SHL&(1,15-AND(x&,15))
+  notmask&=NOT mask&
+  ' Meme correction de poids que dans cptst : plan 0 = LSB (voir commentaire la-bas).
+  IF (color| AND 1)
+    CARD{adr_ligne%}=CARD{adr_ligne%} OR mask&
+  ELSE
+    CARD{adr_ligne%}=CARD{adr_ligne%} AND notmask&
+  ENDIF
+  ADD adr_ligne%,2
+  IF (color| AND 2)
+    CARD{adr_ligne%}=CARD{adr_ligne%} OR mask&
+  ELSE
+    CARD{adr_ligne%}=CARD{adr_ligne%} AND notmask&
+  ENDIF
+  ADD adr_ligne%,2
+  IF (color| AND 4)
+    CARD{adr_ligne%}=CARD{adr_ligne%} OR mask&
+  ELSE
+    CARD{adr_ligne%}=CARD{adr_ligne%} AND notmask&
+  ENDIF
+  ADD adr_ligne%,2
+  IF (color| AND 8)
+    CARD{adr_ligne%}=CARD{adr_ligne%} OR mask&
+  ELSE
+    CARD{adr_ligne%}=CARD{adr_ligne%} AND notmask&
+  ENDIF
+RETURN
+.
+PROCEDURE fpset(x&,y&,adr_scr%)
+  ' set a pixel at x,y in the screen buffer adr_scr% at color 1
+  adr%=ADD(adr_scr%,ADD(AND(SHR(x&,1),65528),t160&(y&)))
+  dec%=SHR(32768,(x& AND &HF))
+  CARD{adr%}=CARD{adr%} OR dec%
+RETURN
+.
+FUNCTION fptst(x&,y&,adr_scr%)
+  ' PTST a nimporte quelle adresse - code en aveugle - a tester, pixel =0 ou +
+  ADD adr_scr%,ADD(SHL&(SHR&(x&,5),4),t160&(y&))
+  CARD{adr_scr%}=CARD{adr_scr%} OR SHL&(1,x& AND 15)
+  RETURN (CARD{adr_scr%} AND SHL&(1,x& AND 15))<>0
+ENDFUNC
+.
+PROCEDURE area.lines.erase(x1&,y1&,x2&,y2&)
+  ' ERASE A RECTANGULAR AREA OF THE SCREEN BY VERTICAL CROSS STEP2 LINES
+  IF x1&>x2&
+    SWAP x1&,x2&
+  ENDIF
+  IF y1&>y2&
+    SWAP y1&,y2&
+  ENDIF
+  w&=x2&-x1&
+  h&=y2&-y1&
+  IF EVEN(h&)
+    INC y2&
+  ENDIF
+  ' box_col& est un index de REGISTRE MATERIEL (calcule depuis pal%) ;
+  ' COLOR attend un index VDI, d'ou la conversion par vdicol|() (voir @vdicol)
+  COLOR vdicol|(box_col&)
+  FOR y&=y1& TO y2& STEP 2
+    bl&=y2&-(y&-y1&)
+    LINE x1&,y&,x2&,y&
+    LINE x1&,bl&,x2&,bl&
+    stab
+    LINE x1&,y&,x2&,y&
+    LINE x1&,bl&,x2&,bl&
+  NEXT y&
+  stab
+  ' to be sure everything is erased in the area
+  DEFFILL vdicol|(box_col&)
+  PBOX x1&,y1&,x2&,y2&
+  VSYNC
+  PBOX x1&,y1&,x2&,y2&
+RETURN
+.
+'
+' Pour un texte qui apparaissent bien (contraste) :
+' Si fonte 1 couleur avec outline d'une autre couleur,
+' Soit il faudrait pour chaque image :
+' - independament des pixels de l'image, effacer le fond la ou le texte sera affich� avec la couleur la plus sombre
+' et afficher le texte avec la couleur le plus claire de la palette (outline inutile)
+' Soit scanner l'image pour voir la couleur (index) de pixel la plus fr�quente
+' Chercher la couleur ayant le meilleur contraste avec celle ci pour redessiner la police bitmap avec cette couelur avant affichage
+' Si on devait partir du principe que la couleur la plus pr�sente est celle de fond, utiliser
+' test_color_contrat avec choix=2 pour redessiner la font bitmap dans la couleur correspondante + un outline d'un contraste interm�diaire
+' sans quoi on est jamais sur que la fonte soit bien visible, meme avec l'outline, en mode indexe
+'
+' Trouve la couleur selon choix& la plus claire 0, la plus sombre 1, la plus contrast�e avec le fond
+PROCEDURE test_color_contrast(choix&,VAR col_number&)
+  ' Programme d'analyse de palette
+  ' Detecte les couleurs extremes et le contraste avec le fond.
+  ' Affecte le resultat a col_number&.
+  LOCAL dim_light,dim_index&
+  LOCAL bright_light,bright_index&
+  LOCAL max_contrast,contrast_index&
+  LOCAL bg_word&,bg_r&,bg_g&,bg_b&,bg_light
+  LOCAL i|,color_word&,r&,g&,b&,current_light,current_contrast
+  LOCAL n&
+  ' Initialisation des valeurs extremes
+  dim_light=1000      ! Luminosite la plus basse trouvee
+  dim_index&=-1          ! Index du registre le plus sombre
+  '
+  bright_light=-1     ! Luminosite la plus haute trouvee
+  bright_index&=-1       ! Index du registre le plus clair
+  '
+  max_contrast=-1     ! Contraste maximum trouve
+  contrast_index&=-1     ! Index du registre le plus contraste
+  ' Obtenir la couleur de fond (Registre #0), depuis pal% (image chargee)
+  bg_word&=CARD{pal%}
+  ' Extraire les composantes R, G, B (0-15)
+  ' PALETTE STE : le 4e bit de chaque composante est le bit de POIDS FAIBLE,
+  ' mais il est stocke en TETE du quartet (....rRRR gGGGbBBB). Lire le quartet
+  ' brut donne donc une valeur bit-brouillee : $0EC5 se lit RGB(14,12,5) alors
+  ' que la vraie couleur est RGB(13,9,10). Les .PI1 de ce projet SONT au format
+  ' STE (les bits 11, 7 et 3 y sont utilises), donc le classement par
+  ' luminosite etait calcule sur des valeurs fausses.
+  ' Sur une palette ST pure (quartets 0-7) la formule rend simplement 2*n :
+  ' le classement reste identique, la correction est donc sans risque.
+  n&=SHR&((bg_word& AND &HF00),8)
+  bg_r&=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+  n&=SHR&((bg_word& AND &HF0),4)
+  bg_g&=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+  n&=(bg_word& AND &HF)
+  bg_b&=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+  ' Calculer une valeur de luminosite approximative pour le fond
+  ' Approximation : 'grey = 0.30*red + 0.59*green + 0.11*blue'
+  bg_light=0.3*bg_r&+0.59*bg_g&+0.11*bg_b&
+  ' Parcourir tous les registres de la palette (0 a 15)
+  FOR i|=0 TO 15
+    ' Obtenir le mot couleur pour le registre courant, depuis pal%
+    color_word&=CARD{pal%+i|+i|}
+    ' Extraire les composantes R, G, B (0-15) (mot &)
+    ' meme decodage STE que pour le fond ci-dessus
+    n&=SHR&((color_word& AND &HF00),8)
+    r&=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+    n&=SHR&((color_word& AND &HF0),4)
+    g&=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+    n&=(color_word& AND &HF)
+    b&=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+    ' Calculer la luminosite de la couleur actuelle
+    current_light=0.3*r&+0.59*g&+0.11*b&
+    ' Calculer le contraste avec la couleur de fond
+    current_contrast=ABS(current_light-bg_light)
+    ' Mettre a jour l'index de la couleur la plus sombre
+    IF current_light<dim_light
+      dim_light=current_light
+      dim_index&=i|
+    ENDIF
+    ' Mettre a jour l'index de la couleur la plus claire.
+    ' Registre 0 exclu : le fond de chaque cellule de caractere est
+    ' toujours force a l'index 0 par le compositage AND de RC_COPY,
+    ' une encre a 0 s'y fondrait et deviendrait invisible.
+    IF i|>0
+      IF current_light>bright_light
+        bright_light=current_light
+        bright_index&=i|
+      ENDIF
+    ENDIF
+    ' Mettre a jour l'index de la couleur la plus contrastee.
+    ' On ignore le registre 0 lui-meme pour le contraste maximal.
+    IF i|>0
+      IF current_contrast>max_contrast
+        max_contrast=current_contrast
+        contrast_index&=i|
+      ENDIF
+    ENDIF
+  NEXT i|
+  '  Affectation du resultat en fonction du choix
+  SELECT choix&
+  CASE 0  ! Couleur la plus claire
+    col_number&=bright_index&
+  CASE 1 ! Couleur la plus sombre
+    col_number&=dim_index&
+  CASE 2 ! Couleur la plus contrastee avec le fond
+    col_number&=contrast_index&
+  DEFAULT ! Choix invalide
+    col_number&=-1 ! Ou une autre valeur d'erreur
+  ENDSELECT
+RETURN
+'
+PROCEDURE recolor_font(couleur&)
+  ' Repeint tous les pixels d'encre de la fonte (font%) avec couleur&.
+  ' Travaille directement en memoire, sans toucher a l'ecran actif.
+  '
+  ' La logique de cptst/cpset est RECOPIEE ICI et non appelee. Raison :
+  ' cptst est une FUNCTION qui lit le tableau global t160&(), lequel est
+  ' DIMensionne dans pmul160 et non dans hello. Cet acces depuis une
+  ' FUNCTION est la cause documentee de ERR 15 intermittent (continue.md
+  ' 6.2) ; quand t160&(y&) rend une valeur erronee, cptst lit et cpset
+  ' ECRIT a la mauvaise adresse, d'ou une conversion partielle et des
+  ' glyphes troues. Ici l'offset de ligne est calcule directement, la
+  ' procedure ne depend plus d'aucun tableau global.
+  '
+  ' A noter : l'ecran d'intro masquait le defaut. Sa palette donne
+  ' ink_col&=2, soit exactement la couleur d'origine de FONT.INL (seul le
+  ' plan 1 y porte des donnees), donc la recoloration n'y changeait rien.
+  ' Les morceaux demandent la couleur 15, qui exige d'allumer trois plans
+  ' vides : le defaut n'y est plus masque.
+  LOCAL x&,y&,lig%,adr%,mask&,notmask&
+  ' lig% avance par addition : MULS coute ~70 cycles sur 68000, ADD en coute 8.
+  lig%=font%
+  FOR y&=0 TO char.height&*2-1
+    FOR x&=0 TO 320-1
+      adr%=lig%+SHL&(SHR&(x&,4),3)
+      mask&=SHL&(1,15-AND(x&,15))
+      ' pixel d'encre = au moins un plan allume a cette position
+      IF ((CARD{adr%} OR CARD{adr%+2} OR CARD{adr%+4} OR CARD{adr%+6}) AND mask&)
+        notmask&=NOT mask&
+        IF (couleur& AND 1)
+          CARD{adr%}=CARD{adr%} OR mask&
+        ELSE
+          CARD{adr%}=CARD{adr%} AND notmask&
+        ENDIF
+        IF (couleur& AND 2)
+          CARD{adr%+2}=CARD{adr%+2} OR mask&
+        ELSE
+          CARD{adr%+2}=CARD{adr%+2} AND notmask&
+        ENDIF
+        IF (couleur& AND 4)
+          CARD{adr%+4}=CARD{adr%+4} OR mask&
+        ELSE
+          CARD{adr%+4}=CARD{adr%+4} AND notmask&
+        ENDIF
+        IF (couleur& AND 8)
+          CARD{adr%+6}=CARD{adr%+6} OR mask&
+        ELSE
+          CARD{adr%+6}=CARD{adr%+6} AND notmask&
+        ENDIF
+      ENDIF
+    NEXT x&
+    ADD lig%,160
+  NEXT y&
+RETURN
+'
+PROCEDURE set_text_colors
+  ' recalcule ink_col& et box_col& a partir de la palette pal% de
+  ' l image qui vient d etre chargee, puis recolore la fonte
+  ' choix 2 (et non 0) : le fond a l interieur de chaque lettre est
+  ' toujours le registre 0, force par le ET logique de RC_COPY. On
+  ' prend donc la couleur la plus contrastee avec CE registre, pas la
+  ' plus claire dans l absolu, qui peut rester proche du fond sur une
+  ' image sombre.
+  chk$="set_text_colors:contrast2"
+  test_color_contrast(2,ink_col&)
+  chk$="set_text_colors:contrast1"
+  test_color_contrast(1,box_col&)
+  chk$="set_text_colors:recolor"
+  recolor_font(ink_col&)
+  chk$="set_text_colors:done"
+RETURN
+'
+' Progressive image display fx
+'
+.
+PROCEDURE scrambling(duree&)
+  ' Effet 2 : les lignes de l'image partent melangees et se remettent
+  ' progressivement en place.
+  '
+  ' Meme interface que pixelisation : duree& en trames (50 par seconde),
+  ' sortie anticipee si l'espace est presse.
+  '
+  ' Six defauts corriges par rapport a la version d'origine :
+  '  - la recherche FOR j& n'avait pas d'EXIT (il etait commente) et
+  '    continuait jusqu'a 199 apres avoir trouve ; la ligne cherchee etant
+  '    unique, on sort des qu'elle est en place ;
+  '  - @tatouche etait appele dans la boucle j& la plus interne, soit des
+  '    centaines de milliers d'appels ; le clavier est teste une fois par
+  '    cycle dans @pixhold ;
+  '  - pixl_exit& etait affecte mais jamais teste : l'espace ne faisait rien ;
+  '  - le seuil (199*cycle&/maxcycle&) etait recalcule 200 fois par cycle, en
+  '    flottant ; il l'est une fois, en entier ;
+  '  - la boucle i& parcourait 200 lignes pour n'en traiter que seuil& ;
+  '  - maxcycle&=20 et un seul VSYNC : la duree etait entierement subie.
+  LOCAL i&,j&,maxcycle&,cycle&,r&,temp&,seuil&,tenue&,l_source%,l_dest%
+  maxcycle&=100 ! 100 cycles : 2 lignes remises en place par cycle
+  tenue&=DIV(duree&,maxcycle&)
+  FOR i&=0 TO 199
+    lignes&(i&)=i&
+  NEXT i&
+  ' melange initial (Fisher-Yates)
+  FOR i&=199 TO 1 STEP -1
+    r&=RANDOM(i&)
+    temp&=lignes&(i&)
+    lignes&(i&)=lignes&(r&)
+    lignes&(r&)=temp&
+  NEXT i&
+  pixl_exit&=0
+  FOR cycle&=1 TO maxcycle&
+    seuil&=DIV(MUL(199,cycle&),maxcycle&)
+    FOR i&=0 TO seuil&
+      IF lignes&(i&)<>i&
+        FOR j&=SUCC(i&) TO 199
+          IF lignes&(j&)=i&
+            temp&=lignes&(i&)
+            lignes&(i&)=lignes&(j&)
+            lignes&(j&)=temp&
+          ENDIF
+          EXIT IF lignes&(i&)=i&
+        NEXT j&
+      ENDIF
+    NEXT i&
+    VSYNC
+    FOR i&=0 TO 199
+      l_source%=pic%+t160&(lignes&(i&))
+      l_dest%=phy%+t160&(i&)
+      BMOVE l_source%,l_dest%,160
+    NEXT i&
+    @pixhold(tenue&)
+    EXIT IF pixl_exit&=1
+  NEXT cycle&
+  IF pixl_exit&=1
+    @dissolve.to.pic(100) ! 100 trames = 2 s
+  ELSE
+    BMOVE pic%,phy%,32000
+    BMOVE pic%,log%,32000
+  ENDIF
+RETURN
+.
+PROCEDURE random_pixels(duree&)
+  ' Effet 4 : l'image apparait par blocs disperses, en ordre aleatoire.
+  '
+  ' REECRITURE COMPLETE. La version d'origine cumulait quatre defauts :
+  '  - DIM done!(64000), exactement le motif que hello documente comme
+  '    provoquant quatre bombes, et DIMensionne deux fois de surcroit ;
+  '  - pos%=t160&(y&)+t160&(y%)+x& : y& n'etait jamais affecte dans cette
+  '    boucle et se trouvait compte en double avec y%, donc l'adresse etait
+  '    fausse ; @cpset recevait y& lui aussi au lieu de y% ;
+  '  - echantillonnage par REJET (REPEAT ... UNTIL done!(pos%)=0), qui devient
+  '    pathologique en fin de parcours : les derniers pixels demandent un
+  '    nombre enorme de tirages ;
+  '  - duree en secondes et maxcycle&=100 fige.
+  '
+  ' Ici l'unite devoilee est un bloc de 16x4 pixels : un mot par plan sur
+  ' quatre lignes, soit 8 octets par ligne et 20 x 50 = 1000 blocs. L'ordre
+  ' vient d'un melange de Fisher-Yates sur 1000 mots (2 Ko) : chaque bloc est
+  ' visite une fois et une seule, sans aucun rejet.
+  LOCAL b&,i&,r&,temp&,tenue&,bx&,by&,off%
+  tenue&=DIV(duree&,1000)
+  IF tenue&<1
+    tenue&=1
+  ENDIF
+  FOR i&=0 TO 999
+    ordre&(i&)=i&
+  NEXT i&
+  FOR i&=999 TO 1 STEP -1
+    r&=RANDOM(i&)
+    temp&=ordre&(i&)
+    ordre&(i&)=ordre&(r&)
+    ordre&(r&)=temp&
+  NEXT i&
+  pixl_exit&=0
+  FOR i&=0 TO 999
+    b&=ordre&(i&)
+    bx&=MOD(b&,20)
+    by&=DIV(b&,20)
+    off%=MUL(by&,640)+MUL(bx&,8) ! 4 lignes de 160, un mot par plan
+    BMOVE pic%+off%,phy%+off%,8
+    ADD off%,160
+    BMOVE pic%+off%,phy%+off%,8
+    ADD off%,160
+    BMOVE pic%+off%,phy%+off%,8
+    ADD off%,160
+    BMOVE pic%+off%,phy%+off%,8
+    @pixhold(tenue&)
+    EXIT IF pixl_exit&=1
+  NEXT i&
+  IF pixl_exit&=1
+    @dissolve.to.pic(100)
+  ELSE
+    BMOVE pic%,phy%,32000
+    BMOVE pic%,log%,32000
+  ENDIF
+RETURN
+' !>
+> PROCEDURE scan_pic_for_color(fast!)
+  ' procedure de scan des index de couleur de chaque pixel de l'ecran avec
+  ' analse frequentielle couleurs
+  ' pour ne plus dependre des tableaux et limiter les risques de pertes de donnees
+  ' array -> malloc + cards
+  ' pic_colors_array%
+  ' LOCAL x&,y&,adr_pix%,color|,adr_pix%
+  ARRAYFILL freq%(),0
+  IF fast!
+    @fast_ptst_scan
+  ELSE
+    adr_pix%=pic_colors_array%
+    FOR y&=0 TO 199
+      FOR x&=0 TO 319
+        ' PTST pour eviter une nelle rout custom foireuse
+        color|=vdicol|(PTST(x&,y&))
+        BYTE{adr_pix%}=color|
+        INC freq%(color|)
+        INC adr_pix%
+      NEXT x&
+    NEXT y&
+  ENDIF
+  '
+  ' Trouve les 2 valeurs min / max et index correspondants du tableau de frequence
+  ' Initialisations
+  most1_val%=-65000     ! 65000 > 64000 max pixels in screen
+  most2_val%=-65000
+  most1_index&=-1
+  most2_index&=-1
+  '
+  least1_val%=65000
+  least2_val%=65000
+  least1_index&=-1
+  least2_index&=-1
+  '
+  ' Analyse du tableau
+  i&=0
+  WHILE i&<=15
+    v%=freq%(i&)
+    '
+    ' Recherche des 2 plus grands
+    IF v%>most1_val%
+      most2_val%=most1_val%
+      most2_index&=most1_index&
+      most1_val%=v%
+      most1_index&=i&
+    ELSE
+      IF v%>most2_val%
+        most2_val%=v%
+        most2_index&=i&
+      ENDIF
+    ENDIF
+    '
+    ' Recherche des 2 plus petits
+    IF v%<least1_val%
+      least2_val%=least1_val%
+      least2_index&=least1_index&
+      least1_val%=v%
+      least1_index&=i&
+    ELSE
+      IF v%<least2_val%
+        least2_val%=v%
+        least2_index&=i&
+      ENDIF
+    ENDIF
+    '
+    INC i&
+  WEND
+RETURN
+.
+> PROCEDURE fast_ptst_scan
+  .
+  ' methode directe de decodage plan de bits pour obtention index de couleur
+  .
+  image_pixel_color_index%=pic_colors_array%
+  y&=0
+  baseadr%=pic%
+  adr_ligne%=baseadr%
+  WHILE y&<200
+    x&=0
+    adr_bloc%=adr_ligne%
+    base_offset%=image_pixel_color_index%+SHL(y&,8)+SHL(y&,6)   ! y*320 = (y<<8)+(y<<6)
+    WHILE x&<320
+      p0&=CARD{adr_bloc%}
+      p1&=CARD{adr_bloc%+2}
+      p2&=CARD{adr_bloc%+4}
+      p3&=CARD{adr_bloc%+6}
+      i&=0
+      m&=&H8000 ! eqv &X1000000000000000    ! masque = bit 15
+      WHILE i&<16
+        ' bit0&=WORD(BTST(p0%,i&)) ! FASTER ?
+        col&=0
+        IF (p0& AND m&)
+          INC col&
+        ENDIF
+        IF (p1& AND m&)
+          ADD col&,2
+        ENDIF
+        IF (p2& AND m&)
+          ADD col&,4
+        ENDIF
+        IF (p3& AND m&)
+          ADD col&,8
+        ENDIF
+        CARD{base_offset%+x&+i&}=col&
+        INC freq%(col&)
+        m&=SHR(m&,1)
+        INC i&
+      WEND
+      ADD adr_bloc%,8     ! chaque bloc = 8 octets (4 mots)
+      ADD x&,16
+    WEND
+    ADD adr_ligne%,160
+    INC y&
+  WEND
+RETURN
+.
+PROCEDURE create_outline_font(width&,height&,color_filled&,color_outline&)
+  ' Cree un outline autour des pixels <> 0
+  ' encore non utilise avec fonte actuelle 8x8 voisins immediats
+  FOR y&=1 TO height&-2
+    FOR x&=1 TO width&-2
+      IF PTST(x&,y&)<>0
+        ' Pixel texte original
+        PSET x&,y&,color_filled&
+        ' Pixels autour : outline
+        FOR dy&=-1 TO 1
+          FOR dx&=-1 TO 1
+            IF dx&=0 AND dy&=0
+              ' centre = deja trace
+            ELSE
+              IF PTST(x&+dx&,y&+dy&)=0
+                PSET x&+dx&,y&+dy&,color_outline&
+              ENDIF
+            ENDIF
+          NEXT dx&
+        NEXT dy&
+      ENDIF
+    NEXT x&
+  NEXT y&
+RETURN
+'
+PROCEDURE slow_fadeon
+  ' to implement
+RETURN
+.
+'
+' *************************************************************************************************
+' *                                  DATAS                                                        *
+' *************************************************************************************************
+base.files:
+' number of initial file to load
+DATA 4
+' Mym music replay rout
+DATA "DATA\SNDHPLAY.INL"
+' speed packer decrunching rout (maybe optional according to total inlines size)
+DATA "DATA\SP3.INL"
+' Sts' bitmap font 8x8 4 colours + bg c on 2 rows 43 bitmap characters + 1 space
+DATA "DATA\FONT.INL"
+' Mym start music
+DATA "DATA\SNDHTUNE.INL"
+'
+intro_pic:
+' Start Screen Picure
+DATA "DATA\ADNQUIZZ.PI1"
+'
+quizz:
+' number of next (music,pics) corresponding files to load
+' only accepted characters: !.,/0123456789:;?ABCDEFGHIJKLMNOPQRSTUVWXYZ "
+DATA 30
+DATA "DATA\01.SND","DATA\01.PI1","GLORIA GAYNOR","I WILL SURVIVE"
+DATA "DATA\02.SND","DATA\02.PI1","ALAIN SOUCHON","LA BALADE DE JIM"
+DATA "DATA\03.SND","DATA\03.PI1","GIORGIO MORODER","CHASE / MIDNIGHT EXPRESS"
+DATA "DATA\04.SND","DATA\04.PI1","BRITNEY SPEARS","OOPS I DID IT AGAIN"
+DATA "DATA\05.SND","DATA\05.PI1","KERNKRAFT 400","ZOMBIE NATION"
+DATA "DATA\06.SND","DATA\06.PI1","SEAL","KISS FROM A ROSE"
+DATA "DATA\07.SND","DATA\07.PI1","DR DRE","STILL D.R.E."
+DATA "DATA\08.SND","DATA\08.PI1","BILLY ZE KICK ET LES GAMINS EN FOLIE","MANGEZ MOI !"
+DATA "DATA\09.SND","DATA\09.PI1","JEAN PIERRE SAVELLI","X OR"
+DATA "DATA\10.SND","DATA\10.PI1","SADE","SMOOTH OPERATOR"
+DATA "DATA\11.SND","DATA\11.PI1","COMPOSITEUR INCONNU","DES CHIFFRES ET DES LETTRES"
+DATA "DATA\12.SND","DATA\12.PI1","YOKO TAKAHASHI","A CRUEL ANGEL THESIS / N.G. EVANGELION"
+DATA "DATA\13.SND","DATA\13.PI1","NIRVANA","COME AS YOU ARE"
+DATA "DATA\14.SND","DATA\14.PI1","JACKIE QUARTZ","JUSTE UNE MISE AU POINT"
+DATA "DATA\15.SND","DATA\15.PI1","VLADIMIR COSMA","LES MONDES ENGLOUTIS"
+DATA "DATA\16.SND","DATA\16.PI1","STU PHILLIP","KNIGHT RIDER / K2000"
+DATA "DATA\17.SND","DATA\17.PI1","ENNIO MORRICONE","CHI MAI / LE PROFESSIONNEL"
+DATA "DATA\18.SND","DATA\18.PI1","KAOMA","LAMBADA"
+DATA "DATA\19.SND","DATA\19.PI1","LA BOUCHE","BE MY LOVER"
+DATA "DATA\20.SND","DATA\20.PI1","STING","ENGLISHMAN IN NEW YORK"
+DATA "DATA\21.SND","DATA\21.PI1","EIFFEL 65","BLUE"
+DATA "DATA\22.SND","DATA\22.PI1","BONNIE TYLER","HOLDING OUT FOR A HERO"
+DATA "DATA\23.SND","DATA\23.PI1","STARDUST","MUSIC SOUNDS BETTER WITH YOU"
+DATA "DATA\24.SND","DATA\24.PI1","KOOL AND THE GANG","FRESH"
+DATA "DATA\25.SND","DATA\25.PI1","WHAM!","LAST CHRISTMAS"
+DATA "DATA\26.SND","DATA\26.PI1","ALPHAVILLE","BIG IN JAPAN"
+DATA "DATA\27.SND","DATA\27.PI1","GEORGES MICHAEL","CARELESS WHISPER"
+DATA "DATA\28.SND","DATA\28.PI1","BRANDY AND MONICA","THE BOY IS MINE"
+DATA "DATA\29.SND","DATA\29.PI1","MAGIC SYSTEM","MAGIC IN THE AIR"
+DATA "DATA\30.SND","DATA\30.PI1","MUSE","TIME IS RUNNING OUT"
+'

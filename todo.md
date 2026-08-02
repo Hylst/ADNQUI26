@@ -265,7 +265,7 @@ la même interface de durée** que `pixelisation(duree&)` :
 | `random_pixels` | ✅ réécrite (`ADNQ27F`) | blocs 16×4, Fisher-Yates sur 1000 mots |
 | `slow_fadeon` | ❌ **coquille vide** | corps = `' to implement`, 2 lignes |
 | `dysplay_text_shuffle` | ⚠️ hors sujet | signature `(background%,text%)` — effet de **texte**, pas de révélation d'image |
-| `dezoom.rc` (ancien `RC_COPY`) | ✅ restauré (`ADNQ27E`) | interface `(duree&)`, 6 niveaux, fin en dissolve |
+| `dezoom.rc` (ancien `RC_COPY`) | ✅ restauré + corrigé (`ADNQ27G`) | 9 paliers utiles au lieu de 6 dont 2 morts |
 | Volet / entrelacement | ⬜ non écrits | cf. §6.1 |
 
 #### `random_pixels` — réécrite (`ADNQ27F`)
@@ -428,3 +428,84 @@ L'image finale `FIREWORK.PI1` est aujourd'hui affichée telle quelle. L'idée d'
 faire un effet de démo plutôt qu'une image fixe est notée pour la prochaine
 version — les briques existent déjà : `@pixdraw` pour les blocs, `@fadereg0` et
 les fondus pour la palette, `@scrambling` pour les lignes.
+
+
+---
+
+## 8. Effets sur le texte artiste / titre
+
+Idées classées par rapport impact / coût. Les deux premières se greffent sur le
+code existant sans rien restructurer.
+
+### 8.1 Ondulation verticale des lettres — le meilleur rapport
+
+`display.bitmap.txt` dessine déjà chaque caractère à une position calculée. Il
+suffit de décaler son `y` par une table de sinus indexée par (rang du caractère
++ phase). Coût quasi nul : les `RC_COPY` sont déjà là, seule l'ordonnée change.
+
+```gfa
+' dans hello, une fois
+DIM sinus&(15)
+RESTORE sin.vague
+FOR i&=0 TO 15
+  READ sinus&(i&)
+NEXT i&
+sin.vague:
+DATA 0,1,2,3,3,3,2,1,0,-1,-2,-3,-3,-3,-2,-1
+
+' dans display.bitmap.txt, remplacer yb& par :
+yv&=yb&+sinus&(AND(ADD(char&,phase&),15))
+```
+
+En incrémentant `phase&` à chaque trame, la vague se déplace le long du texte.
+Attention : `area.lines.erase` doit effacer une bande **plus haute** (± 3 lignes)
+pour que les lettres qui montent ne laissent pas de traînée.
+
+### 8.2 Cyclage de palette sur l'encre — le moins cher
+
+Le texte est dessiné dans `ink_col&`. Faire varier ce seul registre matériel
+d'une trame à l'autre fait pulser le texte, pour **une écriture de palette par
+trame** :
+
+```gfa
+CARD{&HFFFF8240+ink_col&+ink_col&}=grad&(AND(phase&,15))
+```
+
+`grad&()` : une rampe de 16 couleurs préparée au chargement de l'image (par
+exemple de la couleur la plus claire vers la plus contrastée). Se combine
+parfaitement avec 8.1.
+
+### 8.3 Défilement horizontal matériel (STE)
+
+Votre machine est une **STE** : le registre `$FF8265` (0-15) décale l'affichage
+horizontalement par pas d'un pixel, en matériel. Associé à une interruption
+Timer B ligne par ligne, il donne un scroller ou une distorsion sinusoïdale
+**gratuits** côté processeur.
+
+Réserve : demande une maîtrise du timing raster, et **casse la compatibilité
+STF**. À réserver à une version « démo » assumée.
+
+### 8.4 Barres raster derrière le texte
+
+Changer le registre 0 à chaque ligne balayée sur les 16 lignes du texte donne les
+barres de couleur caractéristiques de la scène ST. Même réserve que 8.3 : Timer B
+et timing précis.
+
+### 8.5 Lettres qui tombent
+
+Chaque caractère part au-dessus de sa position et descend jusqu'à sa ligne, avec
+un décalage de départ par lettre. Réutilise le rideau existant, il suffit de
+faire varier `y` au lieu de l'état du masque.
+
+### 8.6 Étirement / zoom du bandeau
+
+Appliquer la réplication de `@pixdraw` à la seule bande de texte : le titre
+apparaît étiré puis se resserre. Les briques existent, il faut juste borner la
+zone traitée.
+
+---
+
+**Recommandation** : commencer par **8.1 + 8.2 combinés**. C'est peu de code, ça
+ne touche ni au timing raster ni à la compatibilité STF, et l'effet obtenu est
+déjà très « démo ». 8.3 et 8.4 méritent leur propre cycle, avec un repli prévu
+pour les machines STF.

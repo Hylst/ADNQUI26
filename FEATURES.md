@@ -235,7 +235,8 @@ rapide. Avec `DIV(ADD(MUL(r&,i&),12),24)` :
 | `ADNQ27C` | `B` + `scrambling(duree&)` et alternance des deux effets par morceau | ✅ à valider |
 | `ADNQ27D` | `C` + `dissolve.to.pic` : l'espace révèle en 2 s au lieu d'un coup | ✅ à valider |
 | `ADNQ27E` | `D` + `dezoom.rc` restauré, alternance à 3 effets | ✅ Testé, fonctionne. |
-| `ADNQ27F` | `E` + `random_pixels` réécrite, alternance à **4 effets** | **Les 4 effets tournent-ils à tour de rôle ?** |
+| `ADNQ27F` | `E` + `random_pixels` réécrite, alternance à **4 effets** | ✅ Testé, fonctionne. |
+| `ADNQ27G` | `F` + échelle de `dezoom.rc` corrigée (9 paliers utiles) | **L'effet continue-t-il de progresser jusqu'au bout ?** |
 
 Si `Q` échoue, **rebaser `R`** sur la version qui tourne au lieu de le tester tel quel.
 
