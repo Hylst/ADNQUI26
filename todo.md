@@ -509,3 +509,62 @@ zone traitée.
 ne touche ni au timing raster ni à la compatibilité STF, et l'effet obtenu est
 déjà très « démo ». 8.3 et 8.4 méritent leur propre cycle, avec un repli prévu
 pour les machines STF.
+
+
+---
+
+## 9. Points tranchés (2026-08-03)
+
+### 9.1 Fondu après l'écran d'intro — il existe
+
+Vérifié dans `quizz` :
+
+```
+REPEAT ... UNTIL ENTREE     ! attente sur l'ecran d'intro
+@ldpic(...)                 ! charge image + palette dans pal% UNIQUEMENT
+@set_text_colors
+@fadeoff                    ! <- le fondu est bien la
+@clearpal
+```
+
+`ldpic` n'écrit **jamais** dans la palette matérielle (`BMOVE adr%+2,pal%,32`),
+donc aucun saut de couleur ne masque le fondu.
+
+Ce qui a changé, c'est sa **perception** : l'ancien fondu séquentiel
+rouge → magenta → vert était très voyant. Le nouveau est une rampe de luminosité
+propre sur 25 trames, soit **0,5 s** — correct mais discret.
+
+Correctif si on le veut plus présent : ajouter un second `VSYNC` par palier
+(1 s au lieu de 0,5 s), ou faire du nombre de paliers un paramètre comme pour les
+effets de révélation.
+
+### 9.2 Fondu du volume musical — pas faisable proprement
+
+Même conclusion que pour le raster (§8.3) : **il faut de l'assembleur**.
+
+Le lecteur SNDH pilote directement le YM2149 et **réécrit les registres de volume
+(8, 9, 10 via `$FF8800`) à chaque trame, sous interruption**. Toute écriture de
+volume depuis GFA serait écrasée dans la trame suivante.
+
+Trois voies, toutes hors GFA pur :
+- patcher le lecteur pour qu'il applique un facteur d'atténuation — assembleur ;
+- utiliser un lecteur SNDH exposant un point d'entrée « volume » — non standard ;
+- le registre de volume maître STE `$FF8924` ne concerne que le **son DMA**, pas
+  le YM : sans effet sur du SNDH.
+
+Repli sans coût : couper net avec `@sndh.off` en même temps que le fondu image,
+la coupure passe inaperçue si l'écran s'éteint simultanément.
+
+### 9.3 Ressources notées
+
+- `2p_16_22.pi1` (32 066 o) — police prévue pour le scrolltext de l'intro.
+- `GFX_WIP/` et `OLD/` sont désormais dans `.gitignore`.
+
+### 9.4 Prochains chantiers convenus
+
+1. **Ondulation animée du texte** jusqu'à la réaction clavier, avec
+   **restauration ciblée du fond** (garder une copie de la bande d'image dans
+   `lowborderm%`, la restaurer avant chaque redessin). Vise 25 Hz — redessiner
+   deux lignes de texte coûte environ 80 `RC_COPY`, ce qui ne tient pas en une
+   trame mais passe en deux.
+2. **Feu d'artifice** en remplacement de l'image finale digitalisée.

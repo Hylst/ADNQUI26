@@ -1,5 +1,0 @@
-' Test minimal : compile ce fichier en TEST1.PRG et lance-le.
-' Si une boite ALERT "TEST OK" ne s'affiche meme pas ici, le probleme
-' n'est pas dans ADNQUI26 mais dans la chaine compilation/execution
-' elle-meme (Steem SSE, GFABASIC.PRG, ou l'environnement).
-ALERT 1,"TEST OK - ca marche",1,"OK",choix_err&

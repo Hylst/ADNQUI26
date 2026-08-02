@@ -1,2 +1,6 @@
 # Sauvegardes de travail creees avant edition : git en tient lieu
 *.avant-*
+
+# Travaux graphiques en cours et archives
+GFX_WIP/
+OLD/

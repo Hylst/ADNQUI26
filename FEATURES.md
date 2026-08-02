@@ -11,7 +11,7 @@ Légende : ✅ fonctionne · ⚠️ fonctionne avec réserve · 🔬 modifié, n
 | Apparition progressive de l'image (pixellisation, scrambling) | 🔬 | Réécrite dans `ADNQ26Z` : dessin par plans de bits, durée pilotée (`pix.duree&` = 6000 trames = 120 s). |
 | Affichage du texte réponse (artiste / titre) | ⚠️ | Lisible seulement si la palette de l'image s'y prête — c'est le sujet ouvert ci-dessous. |
 | Contrôle clavier (Espace / Entrée / Backspace) | ✅ | |
-| Fondus de palette (`fadeon` / `fadeoff`) | 🔬 | Trois défauts corrigés dans `ADNQ26V`, voir ci-dessous. |
+| Fondus de palette (`fadeon` / `fadeoff`) | ✅ | Trois défauts corrigés dans `ADNQ26V`, voir ci-dessous. |
 | Écran d'intro, écran final « fireworks » | ✅ | |
 
 ## Le sujet ouvert : contraste du texte
@@ -216,6 +216,12 @@ rapide. Avec `DIV(ADD(MUL(r&,i&),12),24)` :
 | 1ᵉʳ mouvement d'une composante faible | pas 12 | **pas 6** |
 | Régularité des paliers (écart-type) | 0,203 | **0,100** |
 | Dernier saut de la rampe | 1,0 | **0,1** |
+
+### Version courante : `ADNQ27G.LST`
+
+Le développement se fait désormais **sur ce seul fichier**, avec un commit git à
+chaque étape pour permettre un retour arrière. Plus de nouvelle lettre par
+modification.
 
 ### File d'attente des cycles de test
 
