@@ -262,13 +262,35 @@ la même interface de durée** que `pixelisation(duree&)` :
 |---|---|---|
 | `pixelisation` | ✅ complet | pilotée par `duree&`, 9 niveaux × 20 bandes |
 | `scrambling` | ✅ complet (`ADNQ27C`) | interface `(duree&)`, 100 cycles, sortie à l'espace |
-| `random_pixels` | ❌ **jamais appelée, et risquée** | voir ci-dessous |
+| `random_pixels` | ✅ réécrite (`ADNQ27F`) | blocs 16×4, Fisher-Yates sur 1000 mots |
 | `slow_fadeon` | ❌ **coquille vide** | corps = `' to implement`, 2 lignes |
 | `dysplay_text_shuffle` | ⚠️ hors sujet | signature `(background%,text%)` — effet de **texte**, pas de révélation d'image |
 | `dezoom.rc` (ancien `RC_COPY`) | ✅ restauré (`ADNQ27E`) | interface `(duree&)`, 6 niveaux, fin en dissolve |
 | Volet / entrelacement | ⬜ non écrits | cf. §6.1 |
 
-#### `random_pixels` — à ne pas activer en l'état
+#### `random_pixels` — réécrite (`ADNQ27F`)
+
+La version d'origine cumulait quatre défauts, dont **trois vrais bugs** :
+
+```gfa
+y%=RANDOM(200)
+pos%=t160&(y&)+t160&(y%)+x&           ← y& jamais affecté ici, et compté en double
+@cpset(x&,y&,phy%,cptst(x&,y&,pic%))  ← utilise y& (périmé), pas y%
+```
+
+Plus un **échantillonnage par rejet** (`REPEAT … UNTIL done!(pos%)=0`) qui devient
+pathologique en fin de parcours — les derniers blocs demandent un nombre énorme de
+tirages — et le `DIM done!(64000)` documenté ci-dessous.
+
+Réécriture : l'unité dévoilée est un bloc de **16×4 pixels** (un mot par plan sur
+quatre lignes), soit 20 × 50 = **1000 blocs**. L'ordre vient d'un Fisher-Yates sur
+1000 mots (2 Ko). Chaque bloc est visité une fois et une seule, **sans aucun rejet**.
+
+Vérifié : les 32000 octets de l'écran sont écrits **exactement une fois** chacun,
+offset maximal 32000, et `MUL(by&,640)` plafonne à 31360, sous la limite du mot
+signé.
+
+#### Motif du `DIM` à 64000 — pour mémoire
 
 ```gfa
 DIM done!(64000)        ! l. 1303
