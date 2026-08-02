@@ -231,7 +231,8 @@ rapide. Avec `DIV(ADD(MUL(r&,i&),12),24)` :
 | `ADNQ26Y` | `X` + arrondi de la rampe + registre 0 monté après `pixelisation` | ✅ à valider |
 | `ADNQ26Z` | `Y` + `pixdraw` par plans de bits, durée pilotée, rideau de texte global | ⚠️ Testé : 5 niveaux tenus 24 s — **trop peu d'étapes, rien ne bouge pendant longtemps**. |
 | `ADNQ27A` | `Z` + 9 niveaux (paliers rectangulaires) × 8 bandes = 72 étapes | ✅ Testé : bon effet, mais dessin encore lent et pas assez d'étapes. |
-| `ADNQ27B` | `A` + transformation au mot, réplication par doublement, 20 bandes = 180 étapes | **Le dessin est-il 2× plus rapide, le rythme bon ?** |
+| `ADNQ27B` | `A` + transformation au mot, réplication par doublement, 20 bandes = 180 étapes | ✅ à valider |
+| `ADNQ27C` | `B` + `scrambling(duree&)` et alternance des deux effets par morceau | **Les morceaux pairs et impairs ont-ils bien deux effets différents ?** |
 
 Si `Q` échoue, **rebaser `R`** sur la version qui tourne au lieu de le tester tel quel.
 

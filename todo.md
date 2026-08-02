@@ -261,7 +261,7 @@ la même interface de durée** que `pixelisation(duree&)` :
 | Effet | État réel | Ce qui manque |
 |---|---|---|
 | `pixelisation` | ✅ complet | pilotée par `duree&`, 9 niveaux × 20 bandes |
-| `scrambling` | ⚠️ complet mais figé | `maxcycle&=20` en dur, aucun paramètre de durée |
+| `scrambling` | ✅ complet (`ADNQ27C`) | interface `(duree&)`, 100 cycles, sortie à l'espace |
 | `random_pixels` | ❌ **jamais appelée, et risquée** | voir ci-dessous |
 | `slow_fadeon` | ❌ **coquille vide** | corps = `' to implement`, 2 lignes |
 | `dysplay_text_shuffle` | ⚠️ hors sujet | signature `(background%,text%)` — effet de **texte**, pas de révélation d'image |
