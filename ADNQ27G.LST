@@ -174,20 +174,37 @@ RETURN
   CLS
   stab
   CLS
+  ' Meme desynchronisation ici, et la palette est deja active : les ellipses
+  ' alternaient entre deux tampons de contenus differents. Un seul ecran suffit.
+  @dboff
   ~XBIOS(6,L:pal%)
   COLOR 15
   DEFFILL 15
   FOR x|=1 TO 159 STEP 4
+    VSYNC
     PELLIPSE 159,99,x|,2
-    stab
   NEXT x|
   CLS
   stab
   CLS
+  ' Deux corrections :
+  '
+  ' 1. Le clignotement de la ligne mediane venait d'un desynchronisation des
+  '    tampons : chaque iteration n'ecrivait que dans log% puis appelait stab,
+  '    donc les deux tampons ne contenaient JAMAIS la meme chose. L'affichage
+  '    alternant a 50 Hz, on voyait les deux contenus se succeder. On travaille
+  '    desormais sur un seul ecran (dboff) avec un simple VSYNC : le dessin par
+  '    trame est minuscule, deux lignes et six segments, donc sans dechirure.
+  '
+  ' 2. Le BMOVE copiait 320 octets alors qu'une ligne basse resolution en fait
+  '    160 : il ecrivait donc deux lignes a chaque fois, et depassait de 160
+  '    octets la fin de l'ecran a la derniere iteration.
+  @dboff
   y2|=99
   FOR y|=100 TO 199
-    BMOVE pic%+t160&(y|),log%+t160&(y|),320
-    BMOVE pic%+t160&(y2|),log%+t160&(y2|),320
+    VSYNC
+    BMOVE pic%+t160&(y|),phy%+t160&(y|),160
+    BMOVE pic%+t160&(y2|),phy%+t160&(y2|),160
     LINE 0,y2|-2,319,y2|-2
     LINE 19,y2|-3,300,y2|-3
     LINE 149,y2|-4,169,y2|-4
@@ -195,7 +212,6 @@ RETURN
     LINE 19,y|+3,300,y|+3
     LINE 149,y|+4,169,y|+4
     DEC y2|
-    stab
   NEXT y|
   BMOVE pic%,log%,32000
   BMOVE pic%,phy%,32000                                        !<
