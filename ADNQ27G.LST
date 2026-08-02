@@ -951,6 +951,7 @@ PROCEDURE fadeoff
     FOR ii&=0 TO 15  ! change colours
       CARD{&HFFFF8240+ii&+ii&}=ipal&(ii&)
     NEXT ii&
+    VSYNC ! second VSYNC : porte le fondu de 0,5 s a 1 s, plus lisible
   NEXT i&
   ' !<
 RETURN
@@ -1033,6 +1034,7 @@ PROCEDURE fadeon
     FOR ii&=1 TO 15  ! change colours
       CARD{&HFFFF8240+ii&+ii&}=ipal&(ii&)
     NEXT ii&
+    VSYNC ! second VSYNC : porte le fondu de 0,5 s a 1 s, plus lisible
   NEXT i&
   ' ERASE ipal&(),r&(),v&(),b&(),dr(),dv(),db()                   !<
 RETURN

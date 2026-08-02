@@ -568,3 +568,64 @@ la coupure passe inaperçue si l'écran s'éteint simultanément.
    deux lignes de texte coûte environ 80 `RC_COPY`, ce qui ne tient pas en une
    trame mais passe en deux.
 2. **Feu d'artifice** en remplacement de l'image finale digitalisée.
+
+
+---
+
+## 10. Audit du 2026-08-03 — défauts restants
+
+Rien de bloquant, mais voici ce qui ressort d'un balayage du fichier.
+
+### 10.1 Variables de boucle globales — le risque le plus sérieux
+
+**44 procédures, seulement 19 déclarent des `LOCAL`.** Les autres utilisent des
+variables globales comme compteurs (`i&`, `y&`, `x&`, `char&`…). Tant qu'aucune
+procédure n'en appelle une autre qui réutilise le même nom, cela fonctionne — mais
+c'est exactement le genre de piège qui se déclenche à la première réorganisation.
+
+`display.bitmap.txt` appelle `area.lines.erase` : la première utilise `char&`,
+`m.appear&`, `cx&`, `cy&`, `yv&` ; la seconde `x1&`, `y1&`, `x2&`, `y2&`, `w&`,
+`h&`, `y&`, `bl&`. Pas de collision **aujourd'hui**, mais rien ne l'empêche.
+
+À traiter procédure par procédure, en commençant par celles qui s'appellent entre
+elles. Sans urgence, mais à ne pas oublier avant d'ajouter des effets imbriqués.
+
+### 10.2 Instrumentation de debug toujours en place
+
+- **15 affectations `chk$=`** dans le flux principal et `set_text_colors`.
+- L'`ALERT` de la ligne 355 s'affiche **même en sortie normale** : elle est dans
+  le gestionnaire `ON ERROR GOSUB bye`, mais `bye` est aussi le chemin de sortie
+  volontaire.
+
+À retirer une fois la version stabilisée. `chk$` reste utile tant qu'on débogue.
+
+### 10.3 Code mort confirmé
+
+| Procédure | Références hors définition |
+|---|---|
+| `slow_fadeon` | **0** — coquille vide (`' to implement`) |
+| `pal.order.by.lum` | **0** — tri incorrect de surcroît, cf. §3 |
+| `dysplay_text_shuffle` | 1 (définition seule) |
+| `create_outline_font` | 1 (définition seule) |
+| `fpset` | 1 (définition seule) |
+
+`create_outline_font` mérite peut-être d'être conservée : un contour logiciel
+autour des lettres est une alternative sérieuse au bandeau noir (cf. §10.4).
+
+### 10.4 Piste : contour plutôt que bandeau
+
+Plutôt que d'effacer un gros bloc derrière le texte, `create_outline_font`
+pourrait dessiner un contour d'une couleur contrastée autour de chaque glyphe. Le
+texte deviendrait lisible **sur l'image elle-même**, sans bandeau. C'est la voie
+vers l'affichage « en transparence » évoqué.
+
+Réserve : le contour consomme un second index de couleur, et il faut vérifier
+qu'il contraste à la fois avec l'encre et avec le fond local.
+
+### 10.5 Points vérifiés, rien à signaler
+
+- **Syntaxe `RC_COPY`** : `RC_COPY s_adr,sx,sy,w,h TO d_adr,dx,dy[,m]` — conforme
+  au manuel, l'usage dans le code est correct partout. Sur STe le blitter accélère
+  effectivement ces copies, et `hello` l'active déjà quand il le détecte.
+- **Aucune division flottante** ne subsiste dans une boucle chaude.
+- `FOR`/`NEXT`, `IF`/`ENDIF`, `WHILE`/`WEND`, `REPEAT`/`UNTIL` : tous équilibrés.
