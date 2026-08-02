@@ -143,6 +143,12 @@ chk$="quizz"
   DIM pnh&(8),pnv&(8) ! taille de bloc horizontale / verticale par niveau
   DIM ordre&(1000) ! ordre de devoilement pour @random_pixels (2 Ko)
   DIM rcniv&(8) ! tailles de bloc de @dezoom.rc
+  DIM sinus&(15) ! table d'ondulation du texte, cf. @display.bitmap.txt
+  RESTORE sin.vague
+  FOR i&=0 TO 15
+    READ sinus&(i&)
+  NEXT i&
+  txt.vague&=0 ! 0 = texte droit, 1 = texte ondule
   RESTORE rc.niveaux
   FOR i&=0 TO 8
     READ rcniv&(i&)
@@ -365,8 +371,14 @@ PROCEDURE display.bitmap.txt(text$,xb&,yb&,horizontal!,bg_erase!,center!)
   IF center!
     xb&=160-(len.text&+1)*char.width&/2
   ENDIF
+  ' La bande effacee est plus haute de l'amplitude de l'ondulation (3 pixels
+  ' de part et d'autre), sinon les lettres hautes laissent une trainee.
   IF bg_erase!
-    area.lines.erase(xb&-2,yb&-2,xb&+(1+len.text&)*char.width&+2,yb&+char.height&) ! erase area for text
+    IF txt.vague&=0
+      area.lines.erase(xb&-2,yb&-2,xb&+(1+len.text&)*char.width&+2,yb&+char.height&)
+    ELSE
+      area.lines.erase(xb&-2,yb&-5,xb&+(1+len.text&)*char.width&+2,yb&+char.height&+3)
+    ENDIF
   ENDIF
   ' Boucles INVERSEES : l'etat du rideau est desormais la boucle externe, et
   ' tous les caracteres sont dessines a chaque etat. Auparavant chaque lettre
@@ -381,10 +393,19 @@ PROCEDURE display.bitmap.txt(text$,xb&,yb&,horizontal!,bg_erase!,center!)
     cy&=yb&
     FOR char&=1 TO SUCC(len.text&)
       pos.char&=PRED(INSTR(font.chars$,MID$(text$,char&,1)))
+      ' Ondulation : chaque lettre est posee sur une sinusoide, decalee d'un
+      ' cran par caractere. La vague est STATIQUE -- la position de repos est
+      ' deja ondulee -- donc aucune lettre ne se deplace entre deux etats du
+      ' rideau, et il n'y a pas de trainee a effacer.
+      IF txt.vague&=0
+        yv&=yb&
+      ELSE
+        yv&=yb&+sinus&(AND(char&,15))
+      ENDIF
       IF (pos.char&<43)
         IF horizontal!
-          RC_COPY fmask%,m.appear&,0,8,8 TO log%,cx&,yb&
-          RC_COPY font%,bitmap.char.x&(pos.char&),bitmap.char.y&(pos.char&),char.width&,char.height& TO log%,cx&,yb&,1
+          RC_COPY fmask%,m.appear&,0,8,8 TO log%,cx&,yv&
+          RC_COPY font%,bitmap.char.x&(pos.char&),bitmap.char.y&(pos.char&),char.width&,char.height& TO log%,cx&,yv&,1
         ELSE
           RC_COPY fmask%,m.appear&,0,8,8 TO log%,xb&,cy&
           RC_COPY font%,bitmap.char.x&(pos.char&),bitmap.char.y&(pos.char&),char.width&,char.height& TO log%,xb&,cy&,1
@@ -395,7 +416,9 @@ PROCEDURE display.bitmap.txt(text$,xb&,yb&,horizontal!,bg_erase!,center!)
       ADD cy&,char.width&
     NEXT char&
     stab
-  NEXT m.appear&                                               !<
+  NEXT m.appear&
+sin.vague:
+  DATA 0,1,2,3,3,3,2,1,0,-1,-2,-3,-3,-3,-2,-1                                               !<
 RETURN
 .
 ' !>
@@ -694,6 +717,7 @@ RETURN
 .
 ' !>
 PROCEDURE answer_display(answer1$,answer2$)
+  txt.vague&=1 ! artiste et titre en texte ondule
   REPEAT
     matouche&=BYTE{&HFFFC02}
     VSYNC
