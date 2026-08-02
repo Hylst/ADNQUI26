@@ -303,6 +303,21 @@ Réserve : sa lenteur venait des ~4500 `RC_COPY` par niveau, et sa durée était
 **subie**. Comme effet alternatif il faudra lui donner la même interface
 `(duree&)` que les autres, sinon il ne tiendra pas les 2 minutes de façon réglée.
 
+#### Fin progressive commune — `@dissolve.to.pic(trames&)`
+
+Appuyer sur espace ne révèle **jamais** l'image d'un coup : l'effet en cours est
+abandonné et l'image se dévoile en **dissolve**, ligne par ligne dans un ordre
+aléatoire, sur 100 trames = **2,00 s** (vérifié : 200 lignes distinctes,
+couverture complète).
+
+C'est particulièrement utile pour les effets **naturellement lents** — le dézoom
+`RC_COPY` du chantier 2 notamment. On ne cherche pas à les accélérer, ce qui est
+impossible vu leur coût machine : on bascule sur cette révélation-ci, progressive
+et de durée connue.
+
+`trames&` règle la vitesse : 50 → 1 s (4 lignes/trame), 100 → 2 s (2 lignes),
+150 → 4 s (1 ligne, plancher).
+
 #### Interface commune à viser
 
 ```gfa
