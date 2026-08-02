@@ -256,12 +256,75 @@ sans toucher aux procédures.
 Pour vraiment alterner d'un morceau à l'autre, il reste à **donner à chaque effet
 la même interface de durée** que `pixelisation(duree&)` :
 
-| Effet | État | À faire |
+### Audit vérifié (2026-08-02, sur `ADNQ27B.LST`)
+
+| Effet | État réel | Ce qui manque |
 |---|---|---|
-| `pixelisation` | ✅ | pilotée par `duree&`, 5 niveaux tenus |
-| `scrambling` | ⬜ | `maxcycle&=20` en dur ; lui passer `duree&` et tenir chaque cycle |
-| `random_pixels` | ⬜ | procédure présente mais jamais appelée — à évaluer |
-| Volet / entrelacement | ⬜ | non écrits, cf. §6.1 |
+| `pixelisation` | ✅ complet | pilotée par `duree&`, 9 niveaux × 20 bandes |
+| `scrambling` | ⚠️ complet mais figé | `maxcycle&=20` en dur, aucun paramètre de durée |
+| `random_pixels` | ❌ **jamais appelée, et risquée** | voir ci-dessous |
+| `slow_fadeon` | ❌ **coquille vide** | corps = `' to implement`, 2 lignes |
+| `dysplay_text_shuffle` | ⚠️ hors sujet | signature `(background%,text%)` — effet de **texte**, pas de révélation d'image |
+| Ancien dézoom `RC_COPY` | ❌ **supprimé** du fichier courant | récupérable, voir plus bas |
+| Volet / entrelacement | ⬜ non écrits | cf. §6.1 |
+
+#### `random_pixels` — à ne pas activer en l'état
+
+```gfa
+DIM done!(64000)        ! l. 1303
+```
+
+C'est **exactement le motif** que `hello` documente comme provoquant quatre
+bombes :
+
+```gfa
+' v 4 bombs executing this v why ?!! 64000<65536 !
+' DIM pic_colors|(64000) ! ... 4 bombes ... plantage des lancement prog ??!!!
+```
+
+La procédure `DIM` par ailleurs **deux fois** le même tableau (l. 1303 puis 1310
+avec `maxpixels%-1`). Elle attend aussi une durée en **secondes** (`duree%=120`)
+alors que `pixelisation` raisonne en trames, et son `maxcycle&=100` est figé.
+
+À réécrire sans tableau de 64000 entrées avant tout essai — un générateur
+pseudo-aléatoire parcourant les pixels sans mémoire d'état ferait l'affaire.
+
+#### L'ancien dézoom `RC_COPY` a bien disparu
+
+Il a été **remplacé**, pas conservé à côté. Il reste récupérable :
+
+- `ADNQ26Y.LST` (et versions antérieures) contiennent la version d'origine ;
+- `git show 57a5c8f^:ADNQ26Z.LST` donne le fichier juste avant le remplacement.
+
+Pour l'utiliser en alternance, le remettre sous un **nom distinct**
+(`pixelisation.rccopy` par exemple) plutôt que de le restaurer à sa place.
+
+Réserve : sa lenteur venait des ~4500 `RC_COPY` par niveau, et sa durée était
+**subie**. Comme effet alternatif il faudra lui donner la même interface
+`(duree&)` que les autres, sinon il ne tiendra pas les 2 minutes de façon réglée.
+
+#### Interface commune à viser
+
+```gfa
+PROCEDURE <effet>(duree&)   ! duree& en trames, 50 par seconde
+  ' doit consommer duree& trames, et sortir tot si pixl_exit&=1
+```
+
+Une fois les quatre effets alignés sur cette signature, le sélecteur dans `quizz`
+tient en quelques lignes :
+
+```gfa
+SELECT MOD(file&,4)
+CASE 0
+  @pixelisation(pix.duree&)
+CASE 1
+  @scrambling(pix.duree&)
+CASE 2
+  @pixelisation.rccopy(pix.duree&)
+CASE 3
+  @random_pixels(pix.duree&)
+ENDSELECT
+```
 
 Une fois toutes les procédures alignées, un simple sélecteur dans `quizz` suffit :
 
