@@ -236,7 +236,7 @@ PROCEDURE intro_quizz
   display.bitmap.txt("PRET A DEVINER ?",64,135,TRUE,TRUE,FALSE)
   display.bitmap.txt("OUVREZ GRAND VOS OREILLES !",80,150,TRUE,TRUE,FALSE)
   display.bitmap.txt("C EST PARTI !",10,165,TRUE,TRUE,FALSE)
-  display.bitmap.txt("APPUYER SUR ENTREE",165,165,TRUE,TRUE,FALSE)
+  display.bitmap.txt("APPUYER SUR ESPACE",165,165,TRUE,TRUE,FALSE)
 RETURN
 .
 ' !>
@@ -253,7 +253,8 @@ PROCEDURE quizz
   REPEAT
     matouche&=BYTE{&HFFFC02}
     VSYNC
-  UNTIL matouche&=&H1C ! IF RETURN PRESSED
+  UNTIL matouche&=&H39 ! IF SPACE PRESSED
+  @wait.release
   FOR file&=0 TO nb_files_max&-1
     BMOVE log%,phy%,32000 ! copy log to phy
     ' WAIT for ENTER or BACKSPACE
@@ -331,7 +332,8 @@ PROCEDURE quizz
   REPEAT
     matouche&=BYTE{&HFFFC02}
     VSYNC
-  UNTIL matouche&=&H1C ! IF RETURN PRESSED
+  UNTIL matouche&=&H39 ! IF SPACE PRESSED
+  @wait.release
   @sndh.off
   @fadeoff
   RC_COPY log%,0,0,320,200 TO log%,0,0,0 ! clear screens
@@ -475,6 +477,22 @@ PROCEDURE dysplay_text_shuffle(background%,text%)
   WEND
 RETURN
 '
+PROCEDURE wait.release
+  ' Attend le RELACHEMENT de la touche. Les codes de relachement ont le bit 7
+  ' a 1 ($B9 pour espace, contre $39 a l'enfoncement).
+  '
+  ' Indispensable depuis que tout se pilote a l'espace : sans cela, maintenir
+  ' la touche enchainerait l'abandon de l'effet, l'affichage de la reponse et
+  ' le passage au morceau suivant en une fraction de seconde -- on n'aurait le
+  ' temps de rien voir.
+  LOCAL k&
+  REPEAT
+    VSYNC
+    k&=BYTE{&HFFFFC02}
+  UNTIL k&>=128
+RETURN
+.
+' !>
 PROCEDURE tatouche
   ' $FFFFFC02 est le registre de donnees de l'ACIA clavier : il conserve le
   ' DERNIER code recu. Un appui bref sur espace y depose le code d'enfoncement
@@ -796,7 +814,8 @@ PROCEDURE txt.anim(a1$,a2$)
     VSYNC ! une trame de plus : l'animation tourne a 25 Hz
     stab
     matouche&=BYTE{&HFFFC02}
-  UNTIL matouche&=&H1C OR matouche&=&HE
+  UNTIL matouche&=&H39 OR matouche&=&HE ! ESPACE, ou BACKSPACE pour revenir
+  @wait.release
   ' remettre les deux tampons dans le meme etat avant de rendre la main
   BMOVE pic%+19520,log%+19520,7200
   BMOVE pic%+19520,phy%+19520,7200
@@ -805,12 +824,16 @@ RETURN
 ' !>
 PROCEDURE answer_display(answer1$,answer2$)
   txt.vague&=1 ! artiste et titre en texte ondule
+  @wait.release ! ne pas reagir a l'appui qui vient d'abreger l'effet
   REPEAT
     matouche&=BYTE{&HFFFC02}
     VSYNC
   UNTIL matouche&=&H39 ! IF SPACE PRESSED
-  display.bitmap.txt(answer1$,32,130,TRUE,TRUE,TRUE)
-  display.bitmap.txt(answer2$,32,150,TRUE,TRUE,TRUE)
+  @wait.release
+  ' bg_erase! a FALSE : le masque REPLACE force deja chaque cellule 8x8 a la
+  ' couleur 0, le bandeau ne couvrait plus que le lisere de 2 pixels autour.
+  display.bitmap.txt(answer1$,32,130,TRUE,FALSE,TRUE)
+  display.bitmap.txt(answer2$,32,150,TRUE,FALSE,TRUE)
   ' wait_key(&H39)   ! wait for SPACE
 RETURN
 .
