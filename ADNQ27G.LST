@@ -861,6 +861,7 @@ RETURN
 .
 ' !>
 PROCEDURE sndh(tune%)
+  sndh.on!=TRUE
   ' SNDH Replayer for GFA
   ' Original by Swe/YesCrew
   ' Modified version by gwEm
@@ -873,11 +874,17 @@ RETURN
 .
 ' !>
 PROCEDURE sndh.off
-  '
-  sndhstop%=sndhplay%+32
-  ~C:sndhstop%()
-  {&H4D2}=0  ! music off
-  WAVE 0,0   ! sound off                    !<
+  ' Ne rien faire si le lecteur n'a jamais demarre : sndh.off saute dans le
+  ' code machine du bloc MALLOC, et bye l'appelle aussi comme gestionnaire
+  ' d'erreur -- donc potentiellement avant que base_files_load ait charge quoi
+  ' que ce soit a cette adresse.
+  IF sndh.on!
+    sndh.on!=FALSE
+    sndhstop%=sndhplay%+32
+    ~C:sndhstop%()
+    {&H4D2}=0  ! music off
+    WAVE 0,0   ! sound off
+  ENDIF
 RETURN
 .
 .
