@@ -1,6 +1,16 @@
-# Sauvegardes de travail creees avant edition : git en tient lieu
-*.avant-*
+# Documentation de travail : seul README.md est publie
+AGENTS.md
+CLAUDE.md
+FEATURES.md
+STRUCT.md
+changelog.md
+continue.md
+todo.md
 
 # Travaux graphiques en cours et archives
 GFX_WIP/
 OLD/
+
+# Sauvegardes de l'editeur GFA et fichiers de travail
+*.BAK
+*.avant-*

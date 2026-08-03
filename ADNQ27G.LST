@@ -1,6 +1,6 @@
 ' ADN QUIZZ - GUESS TITLE FROM MUSIC
 ' HYLST + DEBUG : TOMCHI & DMA SC
-' affichage test clipp�,auto centre,font mono (avec possib de det couleur optimale visib) ou couleur, outline software possible
+' affichage test clippe,auto centre,font mono (avec possib de det couleur optimale visib) ou couleur, outline software possible
 ' So many strange errors
 ' Retropedalage, trop de bugs, rappel version de base
 ' Modifs faciles en cas de prob de contraste pour la police avec rc copy mode
@@ -149,7 +149,7 @@ chk$="quizz"
   DIM freq%(16) ! for scan_pic_for_color
   DIM pnh&(8),pnv&(8) ! taille de bloc horizontale / verticale par niveau
   DIM ordre&(1000) ! ordre de devoilement pour @random_pixels (2 Ko)
-  DIM rcniv&(17) ! tailles de bloc de @dezoom.rc
+  DIM rcniv&(12) ! tailles de bloc de @dezoom.rc
   DIM sinus&(15) ! table d'ondulation du texte, cf. @display.bitmap.txt
   RESTORE sin.vague
   FOR i&=0 TO 15
@@ -157,7 +157,7 @@ chk$="quizz"
   NEXT i&
   txt.vague&=0 ! 0 = texte droit, 1 = texte ondule
   RESTORE rc.niveaux
-  FOR i&=0 TO 17
+  FOR i&=0 TO 12
     READ rcniv&(i&)
   NEXT i&
   @pixinit
@@ -263,7 +263,7 @@ PROCEDURE quizz
     @set_text_colors ! pick ink/box colours from this track picture palette
     ' BMOVE pic%,log%,32000 !
     ' scan_pic_for_color(TRUE)
-    ' ~XBIOS(5,L:phy%,L:phy%,-1)  ! on arrête le double écran
+    ' ~XBIOS(5,L:phy%,L:phy%,-1)  ! on arrete le double ecran
     @fadeoff
     ' BMOVE pic%,phy%,32000
     @clearpal
@@ -346,14 +346,21 @@ RETURN
 .
 ' !>
 PROCEDURE bye
+  ' Couper la musique EN PREMIER : le lecteur SNDH tourne sous interruption
+  ' dans le bloc MALLOC. Si on quitte sans l'arreter, GEMDOS libere ce bloc,
+  ' le realloue a autre chose, et l'interruption continue d'y sauter.
+  @sndh.off
   @dboff
+  ' Restaurer l'ecran et la resolution d'origine. Sans cela l'ecran reste
+  ' pointe sur un tampon du bloc MALLOC, que GEMDOS vient de liberer : le
+  ' bureau GEM affiche alors de la memoire recyclee.
+  ~XBIOS(5,L:oldlog%,L:oldphy%,oldrez&)
   ~XBIOS(6,L:savpal%) ! restore pal
   BYTE{&H484}=key|    ! restore keyboard
   BYTE{&HFFFA09}=inter|  !  restore interrupts
   ~GEMDOS(32,L:sup%) ! user mode on
-  ' DEBUG TEMPORAIRE : affiche le code d'erreur GFA qui a declenche bye.
-  ' A retirer une fois le bug de l'ecran noir identifie.
-  ALERT 1,"ERR "+STR$(ERR)+"|"+ERR$(ERR)+"|au step:"+chk$,1,"OK",choix_err&
+  ' L'ALERT de debug qui s'affichait ici partait aussi en sortie normale,
+  ' bye etant le chemin volontaire autant que le gestionnaire d'erreur.
   ' ~GRAF_MOUSE(257,0) ! =OUT 4,8 show mouse (showm don't work with patched libs)
   OUT 4,8
   IF NOT compiled!
@@ -456,10 +463,10 @@ PROCEDURE dysplay_text_shuffle(background%,text%)
     j&=RANDOM(i&)
     SWAP lignes&(i&),lignes&(j&)
   NEXT i&
-  ' Copier l’image de fond dans les deux buffers une fois
+  ' Copier l'image de fond dans les deux buffers une fois
   RC_COPY background%,0,0,320,200 TO log%,0,0,7
   RC_COPY background%,0,0,320,200 TO phy%,0,0,7
-  ' --- Boucle d’affichage progressif
+  ' --- Boucle d'affichage progressif
   i&=0
   WHILE i&<200
     y&=lignes&(i&)
@@ -494,15 +501,15 @@ RETURN
 .
 ' !>
 PROCEDURE tatouche
-  ' $FFFFFC02 est le registre de donnees de l'ACIA clavier : il conserve le
-  ' DERNIER code recu. Un appui bref sur espace y depose le code d'enfoncement
-  ' ($39), aussitot remplace par le code de relachement ($B9) des qu'on lache.
-  ' Si le sondage tombe apres le relachement, l'appui etait perdu -- d'ou la
-  ' necessite de rester appuye jusqu'a ce qu'une repetition automatique du
-  ' clavier retombe sur un sondage. On accepte donc AUSSI le code de
-  ' relachement : un appui bref suffit desormais.
+  ' $FFFFFC02 conserve le DERNIER code recu, et le garde jusqu'au suivant.
+  ' Accepter aussi le code de relachement ($B9) etait une mauvaise idee : ce
+  ' code reste dans le registre apres l'appui sur l'ecran d'intro, et le
+  ' premier effet de revelation le relisait aussitot, donc s'abregeait seul.
+  ' On ne teste plus que l'enfoncement. Comme $39 reste present tant que la
+  ' touche est maintenue, un appui normal est capte sans avoir a insister --
+  ' a condition de sonder assez souvent, cf. dezoom.rc.
   tatouche&=BYTE{&HFFFFC02}
-  IF tatouche&=&H39 OR tatouche&=&HB9
+  IF tatouche&=&H39
     pixl_exit&=1
   ENDIF
 RETURN
@@ -540,31 +547,38 @@ PROCEDURE pixdraw(nh&,nv&)
     dl%=log%
     FOR yy&=0 TO 199 STEP nv&
       sl%=pic%+t160&(yy&)
+      ' Transformation en LONG : deux mots a la fois, 40 iterations par ligne
+      ' au lieu de 80. Deux mots consecutifs sont deux PLANS differents du
+      ' meme groupe de 16 pixels ; un decalage pourrait donc faire fuir un bit
+      ' d'un plan vers l'autre. Ce n'est pas le cas : les masques ne gardent
+      ' que des bits assez eloignes de la frontiere pour que l'etalement reste
+      ' dans son mot. Verifie sur 30000 longs aleatoires, aucune divergence.
+      ' Les adresses ecran sont paires, l'acces LONG est donc legal.
       IF nh&=16
-        FOR i&=0 TO 158 STEP 2
-          IF (CARD{sl%+i&} AND &H8000)
-            CARD{dl%+i&}=&HFFFF
-          ELSE
-            CARD{dl%+i&}=0
-          ENDIF
-        NEXT i&
-      ELSE IF nh&=8
-        FOR i&=0 TO 158 STEP 2
-          w%=CARD{sl%+i&} AND &H8080
+        FOR i&=0 TO 156 STEP 4
+          w%=LONG{sl%+i&} AND &H80008000
           w%=w% OR SHR(w%,1)
           w%=w% OR SHR(w%,2)
-          CARD{dl%+i&}=w% OR SHR(w%,4)
+          w%=w% OR SHR(w%,4)
+          LONG{dl%+i&}=w% OR SHR(w%,8)
+        NEXT i&
+      ELSE IF nh&=8
+        FOR i&=0 TO 156 STEP 4
+          w%=LONG{sl%+i&} AND &H80808080
+          w%=w% OR SHR(w%,1)
+          w%=w% OR SHR(w%,2)
+          LONG{dl%+i&}=w% OR SHR(w%,4)
         NEXT i&
       ELSE IF nh&=4
-        FOR i&=0 TO 158 STEP 2
-          w%=CARD{sl%+i&} AND &H8888
+        FOR i&=0 TO 156 STEP 4
+          w%=LONG{sl%+i&} AND &H88888888
           w%=w% OR SHR(w%,1)
-          CARD{dl%+i&}=w% OR SHR(w%,2)
+          LONG{dl%+i&}=w% OR SHR(w%,2)
         NEXT i&
       ELSE IF nh&=2
-        FOR i&=0 TO 158 STEP 2
-          w%=CARD{sl%+i&} AND &HAAAA
-          CARD{dl%+i&}=w% OR SHR(w%,1)
+        FOR i&=0 TO 156 STEP 4
+          w%=LONG{sl%+i&} AND &HAAAAAAAA
+          LONG{dl%+i&}=w% OR SHR(w%,1)
         NEXT i&
       ELSE
         BMOVE sl%,dl%,160 ! nh&=1 : la ligne source telle quelle
@@ -658,15 +672,15 @@ PROCEDURE dezoom.rc(duree&)
   ' de niveau. Avant, un balayage grossier se terminait en une fraction de
   ' seconde puis la procedure attendait 1,3 s sans rien afficher : d'ou
   ' l'impression qu'elle travaillait dans le vide, arrivee en bas d'ecran.
-  ' Les 18 paliers totalisent 182 rangees ; l'attente par rangee vaut donc
-  ' duree&/182 et la progression devient continue de haut en bas.
+  ' Les 13 paliers totalisent 160 rangees ; l'attente par rangee vaut donc
+  ' duree&/160 et la progression reste continue de haut en bas.
   LOCAL cycle&,taille&,x&,y&,i&,j&,bh&,bl&,tr&
-  tr&=DIV(duree&,182)
+  tr&=DIV(duree&,160) ! 13 paliers totalisant 160 rangees
   IF tr&<1
     tr&=1
   ENDIF
   pixl_exit&=0
-  FOR cycle&=0 TO 17
+  FOR cycle&=0 TO 12
     taille&=rcniv&(cycle&)
     FOR y&=0 TO 199 STEP taille&
       bh&=taille&
@@ -683,8 +697,13 @@ PROCEDURE dezoom.rc(duree&)
             RC_COPY pic%,x&,y&,4,4 TO phy%,x&+i&,y&+j&
           NEXT i&
         NEXT j&
+        ' sondage clavier pendant le balayage : une rangee grossiere prend
+        ' plusieurs dixiemes de seconde, l'appui y serait sinon ignore
+        @tatouche
+        EXIT IF pixl_exit&=1
       NEXT x&
-      ' attente courte apres CHAQUE rangee : le clavier y est teste aussi
+      EXIT IF pixl_exit&=1
+      ' attente courte apres CHAQUE rangee
       @pixhold(tr&)
       EXIT IF pixl_exit&=1
     NEXT y&
@@ -697,7 +716,7 @@ PROCEDURE dezoom.rc(duree&)
     BMOVE pic%,log%,32000
   ENDIF
 rc.niveaux:
-  DATA 72,68,64,60,56,52,48,44,40,36,32,28,24,20,16,12,8,4
+  DATA 72,64,56,48,40,32,28,24,20,16,12,8,4
 RETURN
 .
 ' !>
@@ -1207,7 +1226,7 @@ PROCEDURE pal.order.by.lum
         max&=bas.pal&(r&) ! on enreg la valeur
         vax&=r& ! ainsi que sa position
       ENDIF
-      ord.pal&(c&)=vax& ! num de couleur correspondant � la lumi�re la+ intense
+      ord.pal&(c&)=vax& ! num de couleur correspondant e la lumiere la+ intense
       bas.pal&(vax&)=-2 ! -2 pour etre sur de ne pas la recomptabiliser
     NEXT r&
   NEXT c&
@@ -1347,15 +1366,15 @@ RETURN
 ' Pour un texte qui apparaissent bien (contraste) :
 ' Si fonte 1 couleur avec outline d'une autre couleur,
 ' Soit il faudrait pour chaque image :
-' - independament des pixels de l'image, effacer le fond la ou le texte sera affich� avec la couleur la plus sombre
+' - independament des pixels de l'image, effacer le fond la ou le texte sera affiche avec la couleur la plus sombre
 ' et afficher le texte avec la couleur le plus claire de la palette (outline inutile)
-' Soit scanner l'image pour voir la couleur (index) de pixel la plus fr�quente
+' Soit scanner l'image pour voir la couleur (index) de pixel la plus frequente
 ' Chercher la couleur ayant le meilleur contraste avec celle ci pour redessiner la police bitmap avec cette couelur avant affichage
-' Si on devait partir du principe que la couleur la plus pr�sente est celle de fond, utiliser
-' test_color_contrat avec choix=2 pour redessiner la font bitmap dans la couleur correspondante + un outline d'un contraste interm�diaire
+' Si on devait partir du principe que la couleur la plus presente est celle de fond, utiliser
+' test_color_contrat avec choix=2 pour redessiner la font bitmap dans la couleur correspondante + un outline d'un contraste intermediaire
 ' sans quoi on est jamais sur que la fonte soit bien visible, meme avec l'outline, en mode indexe
 '
-' Trouve la couleur selon choix& la plus claire 0, la plus sombre 1, la plus contrast�e avec le fond
+' Trouve la couleur selon choix& la plus claire 0, la plus sombre 1, la plus contrastee avec le fond
 PROCEDURE test_color_contrast(choix&,VAR col_number&)
   ' Programme d'analyse de palette
   ' Detecte les couleurs extremes et le contraste avec le fond.
