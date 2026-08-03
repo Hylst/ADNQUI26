@@ -324,12 +324,17 @@ RETURN
 ' !>
 PROCEDURE vumetre
   ' Trois barres de 4x16 en haut a droite, une par voie du YM2149.
-  ' Le registre est selectionne puis relu a la meme adresse $FF8800 :
-  ' 8 = voie A, 9 = voie B, 10 = voie C, bits 3-0 = niveau.
-  ' Bit 4 a 1 : le volume suit le generateur d'enveloppe et les bits 3-0 ne
-  ' veulent rien dire ; on affiche alors le maximum, faute de mieux.
-  ' Le lecteur SNDH ecrit ces registres sous interruption, donc une lecture
-  ' peut tomber a cote. Sans importance pour un vu-metre.
+  '
+  ' Lecture par XBIOS(28), le Giaccess du systeme : XBIOS(28,0,reg) rend le
+  ' contenu du registre reg. Selectionner soi-meme le registre en ecrivant
+  ' dans $FF8800 puis relire ne marchait pas : le lecteur SNDH ecrit ces
+  ' memes registres sous interruption et change la selection entre les deux
+  ' acces, de sorte qu'une seule des trois voies etait lue correctement.
+  '
+  ' 8 = voie A, 9 = voie B, 10 = voie C, bits 3-0 = niveau. Si le bit 4 est a
+  ' 1 le volume suit le generateur d'enveloppe et les bits 3-0 ne veulent rien
+  ' dire : on affiche alors le maximum. Sans cela les barres tomberaient a
+  ' zero sur tous les sons enveloppes, tres frequents en musique ST.
   LOCAL v&,c&,h&,yl&
   ' restaurer le fond depuis l'image : 32 pixels alignes sur 16, soit 16 octets
   FOR yl&=4 TO 19
@@ -338,8 +343,7 @@ PROCEDURE vumetre
   COLOR vdicol|(ink_col&)
   DEFFILL vdicol|(ink_col&)
   FOR c&=0 TO 2
-    BYTE{&HFF8800}=ADD(8,c&)
-    v&=BYTE{&HFF8800}
+    v&=XBIOS(28,0,ADD(8,c&))
     IF (v& AND 16)
       h&=15
     ELSE
@@ -360,6 +364,32 @@ PROCEDURE finale
   scroll$=scroll$+"   THIS MUSIC BY AD   .   FONT BY HYLST   -"
   scroll$=scroll$+"   MERCI POUR VOTRE PARTICIPATION ET BRAVO POUR LES REPONSES"
   scroll$=scroll$+" TROUVEES   .   "
+  ' Palette propre au feu d'artifice. @clearpal a mis tous les registres a
+  ' zero et le seul XBIOS(6) qui les restaurait etait dans screen.opening,
+  ' desormais commente : sans cette rampe tout serait dessine noir sur noir.
+  ' Rampe de braise, du rouge sombre au blanc, noir en 0.
+  SETCOLOR 0,0,0,0
+  FOR i&=1 TO 15
+    fr&=i&
+    IF fr&>7
+      fr&=7
+    ENDIF
+    fv&=i&-6
+    IF fv&<0
+      fv&=0
+    ENDIF
+    IF fv&>7
+      fv&=7
+    ENDIF
+    fb&=i&-11
+    IF fb&<0
+      fb&=0
+    ENDIF
+    IF fb&>7
+      fb&=7
+    ENDIF
+    SETCOLOR i&,fr&,fv&,fb&
+  NEXT i&
   scroll.px&=0
   FOR i&=0 TO 63
     fvie&(i&)=0
@@ -392,7 +422,7 @@ PROCEDURE fx.step
   ' dessine il y a DEUX trames, pas une. On garde donc deux generations de
   ' positions, indexees par la parite, et on n'efface que celle du tampon
   ' courant. Une position a -1 signifie que rien n'y a ete dessine.
-  LOCAL i&,px&,py&,ang&
+  LOCAL i&,px&,py&,ang&,c&
   fx.par&=1-fx.par&
   FOR i&=0 TO 63
     IF epx&(fx.par&,i&)>=0
@@ -423,7 +453,11 @@ PROCEDURE fx.step
       px&=SHR&(fx&(i&),4)
       py&=SHR&(fy&(i&),4)
       IF py&>0 AND py&<190 AND px&>0 AND px&<319
-        cpset(px&,py&,log%,SHR&(fvie&(i&),1)) ! la couleur baisse avec la vie
+        c&=SHR&(fvie&(i&),1) ! fvie& monte a 39, donc c& a 19 : a borner
+        IF c&>15
+          c&=15
+        ENDIF
+        cpset(px&,py&,log%,c&) ! la couleur refroidit avec la vie
         epx&(fx.par&,i&)=px&
         epy&(fx.par&,i&)=py&
       ELSE
