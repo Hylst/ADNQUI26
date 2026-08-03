@@ -152,6 +152,7 @@ PROCEDURE hello
   DIM rcniv&(12) ! tailles de bloc de @dezoom.rc
   DIM sinus&(15) ! table d'ondulation du texte, cf. @display.bitmap.txt
   DIM fx&(63),fy&(63),fvx&(63),fvy&(63),fvie&(63) ! particules du feu d'artifice
+  DIM epx&(1,63),epy&(1,63) ! positions dessinees, une generation par tampon
   RESTORE sin.vague
   FOR i&=0 TO 15
     READ sinus&(i&)
@@ -240,9 +241,11 @@ PROCEDURE quizz
   ' 5) Modif fonte 8x8 en 1 plan avec outline
   '
   ' from quizz title quizz
+  @dboff ! un seul ecran : PBOX et BMOVE visent alors tous deux phy%
   REPEAT
     matouche&=BYTE{&HFFFC02}
     VSYNC
+    @vumetre
   UNTIL matouche&=&H39 ! IF SPACE PRESSED
   @wait.release
   FOR file&=0 TO nb_files_max&-1
@@ -319,6 +322,36 @@ PROCEDURE quizz
 RETURN
 .
 ' !>
+PROCEDURE vumetre
+  ' Trois barres de 4x16 en haut a droite, une par voie du YM2149.
+  ' Le registre est selectionne puis relu a la meme adresse $FF8800 :
+  ' 8 = voie A, 9 = voie B, 10 = voie C, bits 3-0 = niveau.
+  ' Bit 4 a 1 : le volume suit le generateur d'enveloppe et les bits 3-0 ne
+  ' veulent rien dire ; on affiche alors le maximum, faute de mieux.
+  ' Le lecteur SNDH ecrit ces registres sous interruption, donc une lecture
+  ' peut tomber a cote. Sans importance pour un vu-metre.
+  LOCAL v&,c&,h&,yl&
+  ' restaurer le fond depuis l'image : 32 pixels alignes sur 16, soit 16 octets
+  FOR yl&=4 TO 19
+    BMOVE pic%+t160&(yl&)+144,phy%+t160&(yl&)+144,16
+  NEXT yl&
+  COLOR vdicol|(ink_col&)
+  DEFFILL vdicol|(ink_col&)
+  FOR c&=0 TO 2
+    BYTE{&HFF8800}=ADD(8,c&)
+    v&=BYTE{&HFF8800}
+    IF (v& AND 16)
+      h&=15
+    ELSE
+      h&=v& AND 15
+    ENDIF
+    IF h&>0
+      PBOX ADD(296,MUL(c&,6)),20-h&,ADD(299,MUL(c&,6)),19
+    ENDIF
+  NEXT c&
+RETURN
+.
+' !>
 PROCEDURE finale
   ' Ecran de fin : feu d'artifice en boucle, credits en scrolltext sur les 8
   ' dernieres lignes. Espace sort et rend la main a bye, qui restaure le GEM.
@@ -330,8 +363,16 @@ PROCEDURE finale
   scroll.px&=0
   FOR i&=0 TO 63
     fvie&(i&)=0
+    epx&(0,i&)=-1
+    epx&(1,i&)=-1
   NEXT i&
+  fx.par&=0
   fx.delai&=0
+  ' nettoyer les DEUX tampons une fois pour toutes : l'effacement cible ne
+  ' repasse ensuite que sur les points dessines
+  RC_COPY log%,0,0,320,200 TO log%,0,0,0
+  stab
+  RC_COPY log%,0,0,320,200 TO log%,0,0,0
   REPEAT
     @fx.step
     @scroll.step
@@ -347,11 +388,18 @@ PROCEDURE fx.step
   ' seiziemes de pixel, ce qui donne des trajectoires douces sans flottant.
   ' fvie& sert de compteur et d'index de couleur : la particule refroidit en
   ' vieillissant.
+  ' Effacement CIBLE. stab alterne les tampons : celui qu'on dessine a ete
+  ' dessine il y a DEUX trames, pas une. On garde donc deux generations de
+  ' positions, indexees par la parite, et on n'efface que celle du tampon
+  ' courant. Une position a -1 signifie que rien n'y a ete dessine.
   LOCAL i&,px&,py&,ang&
-  ' La zone haute est effacee en entier a chaque trame plutot que particule par
-  ' particule : avec stab les deux tampons alternent, et effacer une position
-  ' memorisee laisserait des trainees dans l'autre.
-  RC_COPY log%,0,0,320,190 TO log%,0,0,0
+  fx.par&=1-fx.par&
+  FOR i&=0 TO 63
+    IF epx&(fx.par&,i&)>=0
+      cpset(epx&(fx.par&,i&),epy&(fx.par&,i&),log%,0)
+      epx&(fx.par&,i&)=-1
+    ENDIF
+  NEXT i&
   DEC fx.delai&
   IF fx.delai&<1
     fx.delai&=40
@@ -376,6 +424,8 @@ PROCEDURE fx.step
       py&=SHR&(fy&(i&),4)
       IF py&>0 AND py&<190 AND px&>0 AND px&<319
         cpset(px&,py&,log%,SHR&(fvie&(i&),1)) ! la couleur baisse avec la vie
+        epx&(fx.par&,i&)=px&
+        epy&(fx.par&,i&)=py&
       ELSE
         fvie&(i&)=0
       ENDIF
