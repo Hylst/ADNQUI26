@@ -347,13 +347,17 @@ PROCEDURE fx.step
   ' fvie& sert de compteur et d'index de couleur : la particule refroidit en
   ' vieillissant.
   LOCAL i&,px&,py&,ang&
+  ' La zone haute est effacee en entier a chaque trame plutot que particule par
+  ' particule : avec stab les deux tampons alternent, et effacer une position
+  ' memorisee laisserait des trainees dans l'autre.
+  RC_COPY log%,0,0,320,190 TO log%,0,0,0
   DEC fx.delai&
   IF fx.delai&<1
     fx.delai&=40
     fx.cx&=MUL(ADD(40,RANDOM(240)),16)
     fx.cy&=MUL(ADD(40,RANDOM(90)),16)
     FOR i&=0 TO 31
-      ang&=MUL(i&,8)
+      ang&=i& ! un cran de la table par particule : 32 directions sur 2 tours
       fx&(i&)=fx.cx&
       fy&(i&)=fx.cy&
       fvx&(i&)=MUL(sinus&(AND(ang&,15)),ADD(6,RANDOM(6)))
@@ -363,11 +367,6 @@ PROCEDURE fx.step
   ENDIF
   FOR i&=0 TO 63
     IF fvie&(i&)>0
-      px&=SHR&(fx&(i&),4)
-      py&=SHR&(fy&(i&),4)
-      IF py&>0 AND py&<190 AND px&>0 AND px&<319
-        cpset(px&,py&,log%,0) ! effacer la position precedente
-      ENDIF
       ADD fx&(i&),fvx&(i&)
       ADD fy&(i&),fvy&(i&)
       ADD fvy&(i&),3 ! gravite
