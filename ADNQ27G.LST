@@ -308,11 +308,13 @@ PROCEDURE quizz
   RC_COPY log%,0,0,320,200 TO log%,0,0,0 ! clear screens
   RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
   @sndh(tune%)
-  @screen.opening(pic%)
-  display.bitmap.txt("C EST FINI !",80,30,TRUE,TRUE,FALSE)
-  display.bitmap.txt("MERCI POUR VOTRE PARTICIPATION !",20,50,TRUE,TRUE,FALSE)
-  display.bitmap.txt("ET BRAVO",20,65,TRUE,TRUE,FALSE)
-  display.bitmap.txt("POUR LES REPONSES TROUVEES !",60,75,TRUE,TRUE,FALSE)
+  ' Ecran de credits fixe, remplace par @finale. Conserve en commentaire au
+  ' cas ou une autre image ou d'autres textes y reviendraient.
+  ' @screen.opening(pic%)
+  ' display.bitmap.txt("C EST FINI !",80,30,TRUE,TRUE,FALSE)
+  ' display.bitmap.txt("MERCI POUR VOTRE PARTICIPATION !",20,50,TRUE,TRUE,FALSE)
+  ' display.bitmap.txt("ET BRAVO",20,65,TRUE,TRUE,FALSE)
+  ' display.bitmap.txt("POUR LES REPONSES TROUVEES !",60,75,TRUE,TRUE,FALSE)
   @finale
 RETURN
 .
@@ -320,11 +322,11 @@ RETURN
 PROCEDURE finale
   ' Ecran de fin : feu d'artifice en boucle, credits en scrolltext sur les 8
   ' dernieres lignes. Espace sort et rend la main a bye, qui restaure le GEM.
-  scroll$="   QUIZZ CODE BY HYLST   -   CODE SUPPORT BY TOMCHI   -"
-  scroll$=scroll$+"   QUIZZ TRACKS BY AD AND DMA SC   -   INTRO MUSIC BY JESS   -"
-  scroll$=scroll$+"   THIS MUSIC BY AD   -   FONT BY HYLST   -"
+  scroll$="   QUIZZ CODE BY HYLST   .   CODE SUPPORT BY TOMCHI   -"
+  scroll$=scroll$+"   QUIZZ TRACKS BY AD AND DMA SC   .   INTRO MUSIC BY JESS   -"
+  scroll$=scroll$+"   THIS MUSIC BY AD   .   FONT BY HYLST   -"
   scroll$=scroll$+"   MERCI POUR VOTRE PARTICIPATION ET BRAVO POUR LES REPONSES"
-  scroll$=scroll$+" TROUVEES   -   "
+  scroll$=scroll$+" TROUVEES   .   "
   scroll.px&=0
   FOR i&=0 TO 63
     fvie&(i&)=0
@@ -333,8 +335,7 @@ PROCEDURE finale
   REPEAT
     @fx.step
     @scroll.step
-    VSYNC
-    stab
+    stab ! stab fait deja son VSYNC : une trame par tour au lieu de deux
     matouche&=BYTE{&HFFFC02}
   UNTIL matouche&=&H39
   @wait.release
@@ -398,7 +399,7 @@ PROCEDURE scroll.step
   RC_COPY log%,0,192,320,8 TO log%,0,192,0 ! effacer la bande
   FOR k&=0 TO 40
     pc&=PRED(INSTR(font.chars$,MID$(scroll$,SUCC(MOD(ADD(c0&,k&),nl&)),1)))
-    IF pc&<43
+    IF pc&>=0 AND pc&<43 ! -1 = caractere hors police
       dx&=MUL(k&,8)-sx&
       IF dx&>=0 AND dx&<312
         RC_COPY font%,bitmap.char.x&(pc&),bitmap.char.y&(pc&),8,8 TO log%,dx&,192
@@ -482,7 +483,7 @@ PROCEDURE display.bitmap.txt(text$,xb&,yb&,horizontal!,bg_erase!,center!)
       ELSE
         yv&=yb&+sinus&(AND(char&,15))
       ENDIF
-      IF (pos.char&<43)
+      IF pos.char&>=0 AND pos.char&<43 ! -1 = caractere hors police
         IF horizontal!
           RC_COPY fmask%,m.appear&,0,8,8 TO log%,cx&,yv&
           RC_COPY font%,bitmap.char.x&(pos.char&),bitmap.char.y&(pos.char&),char.width&,char.height& TO log%,cx&,yv&,1
@@ -844,7 +845,7 @@ PROCEDURE txt.ligne(t$,yb&,freq&,dph&)
   px&=160-(nc&+1)*char.width&/2
   FOR c&=1 TO SUCC(nc&)
     pc&=PRED(INSTR(font.chars$,MID$(t$,c&,1)))
-    IF (pc&<43)
+    IF pc&>=0 AND pc&<43 ! -1 = caractere hors police
       yv&=yb&+sinus&(AND(ADD(MUL(c&,freq&),ADD(txt.phase&,dph&)),15))
       RC_COPY fmask%,56,0,8,8 TO log%,px&,yv&
       RC_COPY font%,bitmap.char.x&(pc&),bitmap.char.y&(pc&),char.width&,char.height& TO log%,px&,yv&,1
