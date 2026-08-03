@@ -390,6 +390,11 @@ PROCEDURE finale
     ENDIF
     SETCOLOR i&,fr&,fv&,fb&
   NEXT i&
+  ' Forcer l'encre du scroll au blanc chaud de la rampe. set_text_colors a
+  ' choisi ink_col& d'apres la palette de FIREWORK.PI1, qui n'a plus cours
+  ' ici : sans cela la lisibilite du texte dependrait de cette image.
+  ink_col&=15
+  recolor_font(15)
   scroll.px&=0
   FOR i&=0 TO 63
     fvie&(i&)=0
