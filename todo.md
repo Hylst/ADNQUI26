@@ -671,6 +671,46 @@ qu'il contraste à la fois avec l'encre et avec le fond local.
 
 ---
 
+## 11bis. Optimisations mesurées, non encore appliquées
+
+### `pixdraw` en LONG — facteur 2 supplémentaire
+
+La transformation horizontale traite un **mot** à la fois. En **long**, elle en
+traite deux : **40 itérations par ligne au lieu de 80**.
+
+```gfa
+w%=LONG{sl%+i&} AND &HAAAAAAAA     ! blocs de 2
+LONG{dl%+i&}=w% OR SHR(w%,1)
+```
+
+Masques : `&HAAAAAAAA` (2 px), `&H88888888` (4), `&H80808080` (8), `&H80008000` (16).
+
+**Le point délicat, vérifié** : deux mots consécutifs sont deux **plans
+différents** du même groupe de 16 pixels. Un décalage pourrait faire fuir un bit
+d'un plan vers l'autre. Ce n'est pas le cas — les masques ne conservent que des
+bits assez éloignés de la frontière pour que l'étalement reste dans son mot.
+Testé sur **30 000 longs aléatoires, 0 divergence** pour les quatre tailles.
+
+Attention : les adresses écran sont paires, donc l'accès `LONG` est légal.
+
+### Ne redessiner que les caractères qui bougent — gain réel : 25 %
+
+J'avais avancé 75 %, c'était faux. Avec la table
+`0,1,2,3,3,3,2,1,0,-1,-2,-3,-3,-3,-2,-1`, **12 caractères sur 16** changent
+d'ordonnée entre deux phases. Le gain ne vaut probablement pas la complexité.
+
+### Bandeau noir — presque inutile
+
+Le masque `REPLACE` force déjà chaque cellule 8×8 à la couleur 0 avant le `AND`.
+Le bandeau ne couvre plus que la marge de 2 pixels autour du texte. Passer
+`bg_erase!` à `FALSE` gagnerait ce liseré.
+
+Pour une **vraie** transparence il faudrait abandonner le couple masque + `AND`
+au profit d'un mode `OR` (7), ce qui change la nature de l'effet : en palette
+indexée, `fond OR encre` donne des couleurs imprévisibles. À étudier séparément.
+
+---
+
 ## 11. Ondulation animée avec restauration ciblée du fond
 
 **Le principe qui rend tout simple** : le fond sous le texte, c'est l'image

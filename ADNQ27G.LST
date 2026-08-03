@@ -476,8 +476,15 @@ PROCEDURE dysplay_text_shuffle(background%,text%)
 RETURN
 '
 PROCEDURE tatouche
+  ' $FFFFFC02 est le registre de donnees de l'ACIA clavier : il conserve le
+  ' DERNIER code recu. Un appui bref sur espace y depose le code d'enfoncement
+  ' ($39), aussitot remplace par le code de relachement ($B9) des qu'on lache.
+  ' Si le sondage tombe apres le relachement, l'appui etait perdu -- d'ou la
+  ' necessite de rester appuye jusqu'a ce qu'une repetition automatique du
+  ' clavier retombe sur un sondage. On accepte donc AUSSI le code de
+  ' relachement : un appui bref suffit desormais.
   tatouche&=BYTE{&HFFFFC02}
-  IF tatouche&=&H39
+  IF tatouche&=&H39 OR tatouche&=&HB9
     pixl_exit&=1
   ENDIF
 RETURN
@@ -728,10 +735,13 @@ PROCEDURE pixhold(trames&)
 RETURN
 .
 ' !>
-PROCEDURE txt.ligne(t$,yb&)
+PROCEDURE txt.ligne(t$,yb&,freq&,dph&)
   ' Dessine UNE ligne de texte a l'etat final du rideau (masque 56), chaque
   ' lettre posee sur la sinusoide decalee par txt.phase&. Sert a l'animation :
   ' pas de rideau, et dessin dans log%, le tampon HORS ECRAN.
+  ' freq& : nombre de crans de la table par caractere -- 1 donne une vague
+  '   longue, 2 une vague deux fois plus serree.
+  ' dph& : decalage de phase, pour desynchroniser deux lignes.
   LOCAL nc&,c&,px&,pc&,yv&
   nc&=PRED(LEN(t$))
   IF nc&>38
@@ -742,7 +752,7 @@ PROCEDURE txt.ligne(t$,yb&)
   FOR c&=1 TO SUCC(nc&)
     pc&=PRED(INSTR(font.chars$,MID$(t$,c&,1)))
     IF (pc&<43)
-      yv&=yb&+sinus&(AND(ADD(c&,txt.phase&),15))
+      yv&=yb&+sinus&(AND(ADD(MUL(c&,freq&),ADD(txt.phase&,dph&)),15))
       RC_COPY fmask%,56,0,8,8 TO log%,px&,yv&
       RC_COPY font%,bitmap.char.x&(pc&),bitmap.char.y&(pc&),char.width&,char.height& TO log%,px&,yv&,1
     ENDIF
@@ -778,8 +788,11 @@ PROCEDURE txt.anim(a1$,a2$)
   REPEAT
     BMOVE pic%+19520,log%+19520,7200 ! lignes 122 a 166
     txt.phase&=SUCC(txt.phase&)
-    @txt.ligne(a1$,130)
-    @txt.ligne(a2$,150)
+    ' Les deux lignes ont des courbes DIFFERENTES : l'artiste ondule en vague
+    ' longue, le titre en vague deux fois plus serree et en phase opposee.
+    ' L'ensemble parait bien plus vivant qu'avec deux ondulations identiques.
+    @txt.ligne(a1$,130,1,0)
+    @txt.ligne(a2$,150,2,8)
     VSYNC ! une trame de plus : l'animation tourne a 25 Hz
     stab
     matouche&=BYTE{&HFFFC02}
