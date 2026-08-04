@@ -8,27 +8,16 @@
 $m 450000 ! memory need for the program 2 be compiled arrays & strings - OR RESERVE...
 .
 .
-chk$="hello"
 @hello
-chk$="get_slide_filenames"
 @get_slide_filenames
-chk$="base_files_load"
 @base_files_load
-chk$="clearpal"
 @clearpal
-chk$="pmul160"
 @pmul160 ! precalc 160*y&
-chk$="prepfont"
 @prepfont(FALSE) ! prepare font for display (4 colours or mono)
-chk$="set_text_colors"
 @set_text_colors ! pick ink/box colours from the intro picture palette
-chk$="sndh"
 @sndh(tune%)
-chk$="screen.opening"
 @screen.opening(pic%)
-chk$="intro_quizz"
 @intro_quizz
-chk$="quizz"
 @quizz
 @bye
 .
@@ -1678,13 +1667,9 @@ PROCEDURE set_text_colors
   ' prend donc la couleur la plus contrastee avec CE registre, pas la
   ' plus claire dans l absolu, qui peut rester proche du fond sur une
   ' image sombre.
-  chk$="set_text_colors:contrast2"
   test_color_contrast(2,ink_col&)
-  chk$="set_text_colors:contrast1"
   test_color_contrast(1,box_col&)
-  chk$="set_text_colors:recolor"
   recolor_font(ink_col&)
-  chk$="set_text_colors:done"
 RETURN
 '
 ' Progressive image display fx
