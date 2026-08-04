@@ -176,10 +176,13 @@ RETURN
 .
 ' !>
 PROCEDURE screen.opening(pic%)
-  ' screen opening
-  CLS
+  ' Les deux tampons sont vides explicitement. CLS ne touche que l'ecran de
+  ' dessin courant, donc l'ancien CLS / stab / CLS effacait deux fois le meme :
+  ' le stab basculait sur le tampon encore rempli par le BLOAD de la fonte
+  ' 16x22, et le sheet restait a l'ecran pendant toute l'ouverture.
+  RC_COPY log%,0,0,320,200 TO log%,0,0,0
+  RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
   stab
-  CLS
   ' Meme desynchronisation ici, et la palette est deja active : les ellipses
   ' alternaient entre deux tampons de contenus differents. Un seul ecran suffit.
   @dboff
@@ -322,13 +325,11 @@ RETURN
 ' !>
 PROCEDURE scroll2.init
   ' Scrolltext de l'ecran d'intro, fonte 16x22 sur 2 plans (4 couleurs).
-  ' Grille de 20 cellules par rangee, 3 rangees. Les points rouges qui
-  ' delimitent les cases occupent la PREMIERE ligne de chaque rangee : on copie
-  ' donc a partir de y+1 sur 21 lignes et ils disparaissent d'eux-memes.
-  ' A verifier si la fonte evolue : l'ordre des caracteres ci-dessous a ete
-  ' releve glyphe par glyphe sur 2P_16_22.PI1.
-  ' Cellules 10 et 11 lues comme parentheses, sans certitude : les textes
-  ' n'en utilisent aucune, une erreur de lecture reste donc sans effet.
+  ' Grille de 20 cellules par rangee, 3 rangees, 44 glyphes en tout : le sheet
+  ' s'arrete au 9, le zero est fabrique depuis le O par @base_files_load.
+  ' L'ordre ci-dessous a ete releve glyphe par glyphe sur 2P_16_22.PI1 ; les
+  ' cases 30 et 31 sont bien une parenthese ouvrante et une fermante, elles se
+  ' lisent comme un O quand elles se suivent.
   f2.chars$="ABCDEFGHIJKLMNOPQRST"
   f2.chars$=f2.chars$+"UVWXYZ-!?,()'.:12345"
   f2.chars$=f2.chars$+"67890"
@@ -339,106 +340,189 @@ PROCEDURE scroll2.init
   s2$=s2$+"ESPACE POUR ABREGER, ESPACE POUR LA REPONSE, "
   s2$=s2$+"ESPACE POUR LA SUITE. ESPACE, QUOI.   -   "
   s2$=s2$+"BONNE CHANCE !      "
+  ' La bande de reference vit hors ecran, dans lowborderm% qui fait justement
+  ' 22 lignes. Elle est recopiee telle quelle dans le tampon de dessin a chaque
+  ' trame, donc les deux ecrans de stab montrent la meme chose. Decaler log%
+  ' directement, comme avant, revenait a donner une colonne sur deux a chaque
+  ' tampon : d'ou le clignotement et la vitesse divisee par deux.
+  ' MALLOC ne rend pas de memoire vide, il faut effacer.
+  s2.band%=lowborderm%
+  RC_COPY s2.band%,0,0,320,22 TO s2.band%,0,0,0
+  s2.pas&=2 ! colonnes par trame, 1 a 4 au choix
   s2.car&=0
   s2.col&=0
+  @scroll2.char
+RETURN
+.
+' !>
+PROCEDURE scroll2.char
+  ' Coin haut gauche du glyphe courant dans le sheet. s2.sx&=-1 pour un
+  ' caractere absent de la fonte, l'espace surtout : la colonne reste vide.
+  LOCAL pc&
+  pc&=PRED(INSTR(f2.chars$,MID$(s2$,SUCC(s2.car&),1)))
+  IF pc&<0
+    s2.sx&=-1
+  ELSE
+    s2.sy&=0
+    WHILE pc&>=20
+      SUB pc&,20
+      ADD s2.sy&,22
+    WEND
+    s2.sx&=SHL&(pc&,4)
+  ENDIF
 RETURN
 .
 ' !>
 PROCEDURE scroll2.step
-  ' Meme principe que le scroll de fin : la bande est poussee de 2 pixels a
-  ' gauche, puis la tranche suivante du caractere courant entre par la droite.
-  ' Bande de 21 lignes en bas d'ecran, y 178 a 198.
-  ' Pas de 17 pixels : 16 de glyphe plus 1 de separation, la fonte n'ayant
-  ' aucune colonne vide a droite. Decalage d'un pixel par trame.
-  ' L'espace n'existe pas dans la fonte : INSTR rend 0, rien n'est dessine, et
-  ' la colonne effacee juste avant defile en blanc. C'est le comportement voulu.
-  LOCAL pc&,sx&,sy&
-  RC_COPY log%,1,178,319,22 TO log%,0,178
-  RC_COPY log%,319,178,1,22 TO log%,319,178,0
-  IF s2.col&<16
-    pc&=PRED(INSTR(f2.chars$,MID$(s2$,SUCC(s2.car&),1)))
-    IF pc&>=0
-      sy&=0
-      WHILE pc&>=20
-        SUB pc&,20
-        ADD sy&,22
-      WEND
-      sx&=ADD(SHL&(pc&,4),s2.col&)
-      RC_COPY fnt2%,sx&,sy&,1,22 TO log%,319,178
+  ' Une trame : la bande de reference glisse de s2.pas& pixels, les colonnes
+  ' entrantes sont remplies une a une, puis les 22 lignes partent d'un bloc
+  ' dans le tampon de dessin. Les lignes 178 a 199 y sont contigues, soit un
+  ' seul BMOVE de 3520 octets a partir de 178*160.
+  ' Pas de 17 pixels par caractere : 16 de glyphe plus 1 de separation, la
+  ' fonte n'ayant aucune colonne vide a droite. 17 n'etant multiple de rien,
+  ' les colonnes entrantes sont traitees une par une plutot qu'en tranche.
+  LOCAL k&,dx&
+  dx&=320-s2.pas&
+  RC_COPY s2.band%,s2.pas&,0,dx&,22 TO s2.band%,0,0
+  RC_COPY s2.band%,dx&,0,s2.pas&,22 TO s2.band%,dx&,0,0
+  FOR k&=0 TO PRED(s2.pas&)
+    IF s2.sx&>=0 AND s2.col&<16
+      RC_COPY fnt2%,ADD(s2.sx&,s2.col&),s2.sy&,1,22 TO s2.band%,ADD(dx&,k&),0
     ENDIF
-  ENDIF
-  INC s2.col&
-  IF s2.col&>=17
-    s2.col&=0
-    INC s2.car&
-    IF s2.car&>=LEN(s2$)
-      s2.car&=0
+    INC s2.col&
+    IF s2.col&>=17
+      s2.col&=0
+      INC s2.car&
+      IF s2.car&>=LEN(s2$)
+        s2.car&=0
+      ENDIF
+      @scroll2.char
     ENDIF
-  ENDIF
+  NEXT k&
+  BMOVE s2.band%,log%+28480,3520
 RETURN
 .
 ' !>
 PROCEDURE note3d.init
-  ' Croche en fil de fer pour l'ecran d'intro. 21 sommets : la tete est un
-  ' octogone extrude de +/-6 en Z (faces avant et arriere reliees par quatre
-  ' aretes), la tige et le crochet restent plans. Tourne autour de Y.
-  ' Table sinus 64 pas en virgule fixe 8 bits : n3sin&() vaut -256 a +256,
+  ' Croche en fil de fer pour l'ecran d'intro. 13 sommets stockes, 21 dessines :
+  ' la tete est un octogone trace deux fois, decale de +/- n3.ep& en Z, la tige
+  ' et le crochet restent dans le plan Z=0. Quatre aretes relient les deux
+  ' octogones, un sommet sur deux, ce qui suffit a donner le volume.
+  ' Table sinus 64 pas en virgule fixe 7 bits : n3sin&() va de -127 a +127,
   ' le cosinus est le meme tableau decale d'un quart de tour.
   LOCAL i&
-  DIM n3x&(20),n3y&(20),n3z&(20),n3px&(20),n3py&(20)
-  DIM n3ax&(8),n3ay&(8)
+  DIM n3hx&(7),n3hy&(7),n3tx&(4),n3ty&(4)
+  DIM n3px&(20),n3py&(20),n3ax&(8),n3ay&(8)
   DIM n3sin&(63)
   FOR i&=0 TO 63
-    n3sin&(i&)=ROUND(256*SIN(6.2831853*i&/64))
+    n3sin&(i&)=ROUND(127*SIN(6.2831853*i&/64))
   NEXT i&
   RESTORE note3d.modele
-  FOR i&=0 TO 20
-    READ n3x&(i&),n3y&(i&),n3z&(i&)
+  FOR i&=0 TO 7
+    READ n3hx&(i&),n3hy&(i&)
   NEXT i&
-  ' Centre a l'ecran, hors du VU-metre (x>=304, y<=19) et du scrolltext
-  ' (y>=178). La boite restauree est calee sur 16 pixels : x 224 a 287, soit
-  ' 112 octets depuis le bord gauche et 32 octets de large.
-  n3.cx&=250
+  FOR i&=0 TO 4
+    READ n3tx&(i&),n3ty&(i&)
+  NEXT i&
+  n3.cx&=256
   n3.cy&=100
+  n3.ep&=6 ! demi-epaisseur de la tete
+  ' Trois phases comptees en quarts de pas, ramenees a 0-63 a la lecture de la
+  ' table. Y avance de 4, X de 2, Z de 1 : un tour en 1,3 s, 2,6 s et 5,1 s.
+  ' Les trois periodes ne retombent jamais ensemble sur une trame, la croche ne
+  ' repasse donc pas par la meme pose.
+  n3.fx&=0
+  n3.fy&=0
+  n3.fz&=0
+  ' Boite restauree a chaque trame, calee sur 16 pixels. Sur les 64x64x64
+  ' orientations possibles le dessin tient dans x 217-294 et y 61-138, ce qui
+  ' rentre dans x 208-303, soit 48 octets a partir du 104e. La boite evite le
+  ' VU-metre (x>=304, y<=19) et le scrolltext (y>=178).
+  n3.ob&=104
+  n3.lg&=48
   n3.y1&=61
-  n3.y2&=139
-  n3.ang&=0
+  n3.y2&=138
 note3d.modele:
-' Croche, +y vers le BAS. Tete avant (z=-6), tete arriere (z=+6), tige et
-' crochet (z=0). Octogone de tete : rayons 14 x 10, incline de 20 degres.
-DATA 3,19,-6,2,27,-6,-7,33,-6,-17,34,-6
-DATA -23,29,-6,-22,21,-6,-13,15,-6,-3,14,-6
-DATA 3,19,6,2,27,6,-7,33,6,-17,34,6
-DATA -23,29,6,-22,21,6,-13,15,6,-3,14,6
-DATA 4,20,0,4,-36,0,12,-30,0,18,-20,0
-DATA 16,-8,0
+' Croche, +y vers le BAS. D'abord la tete, octogone de rayons 14 x 10 incline
+' de 20 degres, puis la tige et le crochet dans l'ordre du trace.
+DATA 3,19,2,27,-7,33,-17,34
+DATA -23,29,-22,21,-13,15,-3,14
+DATA 4,20,4,-36,12,-30,18,-20,16,-8
 RETURN
 .
 ' !>
 PROCEDURE note3d.step
-  ' Une trame. La boite est d'abord remise a l'image d'intro depuis pic%,
-  ' qui la contient encore intacte, puis les 21 sommets sont tournes autour
-  ' de Y et projetes : Xv=xv*d/(zv+d) (real-time-3d-gfx-atari-st p.79).
+  ' Une trame. La boite est d'abord remise a l'image d'intro depuis pic%, qui
+  ' la contient encore intacte, puis les 13 sommets sont tournes sur les trois
+  ' axes et projetes : Xv=xv*d/(zv+d) (real-time-3d-gfx-atari-st p.79), d=256.
   ' Tout est reconstruit a chaque trame, donc les deux tampons de stab
   ' recoivent une image complete - pas de dessin incremental ici.
-  ' DIV et non SHR pour le /256 : les coordonnees sont signees et aucune
-  ' source du corpus ne documente SHR sur un negatif.
-  LOCAL i&,sn&,cs&,x1&,z1&,dn&,s%,d%
-  s%=pic%+t160&(n3.y1&)+112
-  d%=log%+t160&(n3.y1&)+112
+  ' La matrice Rz.Ry.Rx est calculee une fois par trame en virgule fixe 7 bits,
+  ' puis chaque sommet ne coute que 6 produits au lieu de 12.
+  ' Les deux faces de la tete ne different que par Z : on ne transforme que le
+  ' plan median et on ajoute +/- ep& fois la 3e colonne de la matrice. Huit
+  ' transformations economisees.
+  ' Division par 128 : SHR et non DIV, mais sur une valeur rendue positive par
+  ' un biais de 65536 retire ensuite. La reference GFA dit de SHR& que le bit 15
+  ' est recopie vers les bits 16 a 31 "preservant ainsi le signe", ce qui laisse
+  ' entendre un decalage arithmetique sans le dire ; le biais rend la question
+  ' sans objet et coute deux additions contre une division.
+  LOCAL i&,x&,y&,vx&,vy&,vz&,dn&,s%,d%
+  LOCAL ax&,ay&,az&,rsx&,rcx&,rsy&,rcy&,rsz&,rcz&,sysx&,sycx&
+  LOCAL m11&,m12&,m13&,m21&,m22&,m23&,m31&,m32&,m33&,ex&,ey&,ez&
+  s%=ADD(pic%,ADD(t160&(n3.y1&),n3.ob&))
+  d%=ADD(log%,ADD(t160&(n3.y1&),n3.ob&))
   FOR i&=n3.y1& TO n3.y2&
-    BMOVE s%,d%,32
+    BMOVE s%,d%,n3.lg&
     ADD s%,160
     ADD d%,160
   NEXT i&
-  sn&=n3sin&(n3.ang&)
-  cs&=n3sin&(AND(ADD(n3.ang&,16),63))
-  FOR i&=0 TO 20
-    x1&=DIV(MUL(n3x&(i&),cs&)-MUL(n3z&(i&),sn&),256)
-    z1&=DIV(MUL(n3x&(i&),sn&)+MUL(n3z&(i&),cs&),256)
-    dn&=ADD(z1&,256) ! jamais nul : |z1&| plafonne a 40
-    n3px&(i&)=ADD(n3.cx&,DIV(SHL(x1&,8),dn&))
-    n3py&(i&)=ADD(n3.cy&,DIV(SHL(n3y&(i&),8),dn&))
+  ax&=SHR&(n3.fx&,2)
+  ay&=SHR&(n3.fy&,2)
+  az&=SHR&(n3.fz&,2)
+  rsx&=n3sin&(ax&)
+  rcx&=n3sin&(AND(ADD(ax&,16),63))
+  rsy&=n3sin&(ay&)
+  rcy&=n3sin&(AND(ADD(ay&,16),63))
+  rsz&=n3sin&(az&)
+  rcz&=n3sin&(AND(ADD(az&,16),63))
+  sysx&=SUB(SHR(ADD(MUL(rsy&,rsx&),65536),7),512)
+  sycx&=SUB(SHR(ADD(MUL(rsy&,rcx&),65536),7),512)
+  m11&=SUB(SHR(ADD(MUL(rcz&,rcy&),65536),7),512)
+  m12&=SUB(SHR(ADD(SUB(MUL(rcz&,sysx&),MUL(rsz&,rcx&)),65536),7),512)
+  m13&=SUB(SHR(ADD(ADD(MUL(rcz&,sycx&),MUL(rsz&,rsx&)),65536),7),512)
+  m21&=SUB(SHR(ADD(MUL(rsz&,rcy&),65536),7),512)
+  m22&=SUB(SHR(ADD(ADD(MUL(rsz&,sysx&),MUL(rcz&,rcx&)),65536),7),512)
+  m23&=SUB(SHR(ADD(SUB(MUL(rsz&,sycx&),MUL(rcz&,rsx&)),65536),7),512)
+  m31&=-rsy&
+  m32&=SUB(SHR(ADD(MUL(rcy&,rsx&),65536),7),512)
+  m33&=SUB(SHR(ADD(MUL(rcy&,rcx&),65536),7),512)
+  ' Decalage d'extrusion : ep& fois la 3e colonne de la matrice.
+  ex&=DIV(MUL(m13&,n3.ep&),128)
+  ey&=DIV(MUL(m23&,n3.ep&),128)
+  ez&=DIV(MUL(m33&,n3.ep&),128)
+  FOR i&=0 TO 7
+    x&=n3hx&(i&)
+    y&=n3hy&(i&)
+    vx&=SUB(SHR(ADD(ADD(MUL(m11&,x&),MUL(m12&,y&)),65536),7),512)
+    vy&=SUB(SHR(ADD(ADD(MUL(m21&,x&),MUL(m22&,y&)),65536),7),512)
+    vz&=SUB(SHR(ADD(ADD(MUL(m31&,x&),MUL(m32&,y&)),65536),7),512)
+    dn&=ADD(SUB(vz&,ez&),256) ! jamais nul : |vz&| plafonne a 44
+    n3px&(i&)=ADD(n3.cx&,DIV(SHL(SUB(vx&,ex&),8),dn&))
+    n3py&(i&)=ADD(n3.cy&,DIV(SHL(SUB(vy&,ey&),8),dn&))
+    dn&=ADD(ADD(vz&,ez&),256)
+    n3px&(ADD(i&,8))=ADD(n3.cx&,DIV(SHL(ADD(vx&,ex&),8),dn&))
+    n3py&(ADD(i&,8))=ADD(n3.cy&,DIV(SHL(ADD(vy&,ey&),8),dn&))
+  NEXT i&
+  FOR i&=0 TO 4
+    x&=n3tx&(i&)
+    y&=n3ty&(i&)
+    vx&=SUB(SHR(ADD(ADD(MUL(m11&,x&),MUL(m12&,y&)),65536),7),512)
+    vy&=SUB(SHR(ADD(ADD(MUL(m21&,x&),MUL(m22&,y&)),65536),7),512)
+    vz&=SUB(SHR(ADD(ADD(MUL(m31&,x&),MUL(m32&,y&)),65536),7),512)
+    dn&=ADD(vz&,256)
+    n3px&(ADD(i&,16))=ADD(n3.cx&,DIV(SHL(vx&,8),dn&))
+    n3py&(ADD(i&,16))=ADD(n3.cy&,DIV(SHL(vy&,8),dn&))
   NEXT i&
   COLOR vdicol|(ink_col&)
   ' Trois POLYLINE plutot que dix-huit LINE : un seul appel VDI par contour.
@@ -465,7 +549,9 @@ PROCEDURE note3d.step
   FOR i&=0 TO 6 STEP 2
     LINE n3px&(i&),n3py&(i&),n3px&(ADD(i&,8)),n3py&(ADD(i&,8))
   NEXT i&
-  n3.ang&=AND(SUCC(n3.ang&),63) ! 64 pas, un tour en 1,3 s a 50 Hz
+  n3.fx&=AND(ADD(n3.fx&,2),255)
+  n3.fy&=AND(ADD(n3.fy&,4),255)
+  n3.fz&=AND(SUCC(n3.fz&),255)
 RETURN
 .
 ' !>
@@ -1257,6 +1343,11 @@ PROCEDURE base_files_load
   ' libre a ce stade, puis on ne garde que les 66 lignes utiles sans l'entete.
   BLOAD "2P_16_22.PI1",log%
   BMOVE log%+34,fnt2%,66*160
+  ' Le sheet s'arrete au 9 : la 5e case de la 3e rangee, la ou @scroll2.step
+  ' va chercher le zero, ne contient qu'une annotation du graphiste, d'ou le
+  ' caractere brouille. On y recopie le O de la premiere rangee, les deux
+  ' glyphes sont indiscernables dans cette fonte.
+  RC_COPY fnt2%,224,0,16,22 TO fnt2%,64,44
   ' La fonte tient sur 2 plans, couleurs 0 a 3, et voudrait sa propre palette.
   ' Or l'image d'intro occupe les index 1 a 3 sur pres de 40 pour cent de
   ' l'ecran : les forcer la detruirait. On remappe donc la fonte vers 13, 14 et
