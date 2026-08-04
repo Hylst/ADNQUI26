@@ -226,6 +226,14 @@ RETURN
 ' !>
 PROCEDURE intro_quizz
   ' Les textes fixes sont remplaces par le scrolltext 16x22 du bas d'ecran.
+  ' Les gris de la fonte vont dans les registres 13 a 15, ecrits aussi dans
+  ' pal% pour survivre a un XBIOS(6).
+  CARD{pal%+26}=&H222
+  CARD{pal%+28}=&H444
+  CARD{pal%+30}=&HDDD
+  CARD{&HFFFF8240+26}=&H222
+  CARD{&HFFFF8240+28}=&H444
+  CARD{&HFFFF8240+30}=&HDDD
   @scroll2.init
 RETURN
 .
@@ -328,12 +336,18 @@ PROCEDURE scroll2.init
   ' donc a partir de y+1 sur 21 lignes et ils disparaissent d'eux-memes.
   ' A verifier si la fonte evolue : l'ordre des caracteres ci-dessous a ete
   ' releve glyphe par glyphe sur 2P_16_22.PI1.
+  ' Cellules 10 et 11 lues comme parentheses, sans certitude : les textes
+  ' n'en utilisent aucune, une erreur de lecture reste donc sans effet.
   f2.chars$="ABCDEFGHIJKLMNOPQRST"
   f2.chars$=f2.chars$+"UVWXYZ-!?,()'.:12345"
   f2.chars$=f2.chars$+"67890"
-  s2$="   BIENVENUE AU QUIZZ MUSICAL ADN 2026   .   "
-  s2$=s2$+"PRET A DEVINER ?   OUVREZ GRAND VOS OREILLES !   .   "
-  s2$=s2$+"APPUYEZ SUR ESPACE POUR COMMENCER   .   "
+  s2$="      ADN QUIZZ 2026   -   30 MORCEAUX, 30 IMAGES, "
+  s2$=s2$+"ET VOS OREILLES POUR SEULE ARME   -   "
+  s2$=s2$+"L IMAGE SE DEVOILE PENDANT QUE LA MUSIQUE TOURNE... "
+  s2$=s2$+"A VOUS DE TROUVER AVANT LA FIN !   -   "
+  s2$=s2$+"ESPACE POUR ABREGER, ESPACE POUR LA REPONSE, "
+  s2$=s2$+"ESPACE POUR LA SUITE. ESPACE, QUOI.   -   "
+  s2$=s2$+"BONNE CHANCE !      "
   s2.car&=0
   s2.col&=0
 RETURN
@@ -343,21 +357,27 @@ PROCEDURE scroll2.step
   ' Meme principe que le scroll de fin : la bande est poussee de 2 pixels a
   ' gauche, puis la tranche suivante du caractere courant entre par la droite.
   ' Bande de 21 lignes en bas d'ecran, y 178 a 198.
+  ' Pas de 17 pixels : 16 de glyphe plus 1 de separation, la fonte n'ayant
+  ' aucune colonne vide a droite. Decalage d'un pixel par trame.
+  ' L'espace n'existe pas dans la fonte : INSTR rend 0, rien n'est dessine, et
+  ' la colonne effacee juste avant defile en blanc. C'est le comportement voulu.
   LOCAL pc&,sx&,sy&
-  RC_COPY log%,2,178,318,21 TO log%,0,178
-  RC_COPY log%,318,178,2,21 TO log%,318,178,0
-  pc&=PRED(INSTR(f2.chars$,MID$(s2$,SUCC(s2.car&),1)))
-  IF pc&>=0
-    sy&=1
-    WHILE pc&>=20
-      SUB pc&,20
-      ADD sy&,22
-    WEND
-    sx&=ADD(SHL&(pc&,4),s2.col&)
-    RC_COPY fnt2%,sx&,sy&,2,21 TO log%,318,178
+  RC_COPY log%,1,178,319,22 TO log%,0,178
+  RC_COPY log%,319,178,1,22 TO log%,319,178,0
+  IF s2.col&<16
+    pc&=PRED(INSTR(f2.chars$,MID$(s2$,SUCC(s2.car&),1)))
+    IF pc&>=0
+      sy&=0
+      WHILE pc&>=20
+        SUB pc&,20
+        ADD sy&,22
+      WEND
+      sx&=ADD(SHL&(pc&,4),s2.col&)
+      RC_COPY fnt2%,sx&,sy&,1,22 TO log%,319,178
+    ENDIF
   ENDIF
-  ADD s2.col&,2
-  IF s2.col&>=16
+  INC s2.col&
+  IF s2.col&>=17
     s2.col&=0
     INC s2.car&
     IF s2.car&>=LEN(s2$)
@@ -1130,6 +1150,17 @@ PROCEDURE base_files_load
   ' libre a ce stade, puis on ne garde que les 66 lignes utiles sans l'entete.
   BLOAD "2P_16_22.PI1",log%
   BMOVE log%+34,fnt2%,66*160
+  ' La fonte tient sur 2 plans, couleurs 0 a 3, et voudrait sa propre palette.
+  ' Or l'image d'intro occupe les index 1 a 3 sur pres de 40 pour cent de
+  ' l'ecran : les forcer la detruirait. On remappe donc la fonte vers 13, 14 et
+  ' 15, qui ne pesent que 0,07 pour cent de l'image.
+  ' Ces trois cibles ont toutes les bits 2 et 3 a 1, et gardent les bits 0 et 1
+  ' de la source : il suffit de recopier p0 OR p1 dans les plans 2 et 3.
+  FOR fill%=fnt2% TO fnt2%+66*160-8 STEP 8
+    o2&=CARD{fill%} OR CARD{fill%+2}
+    CARD{fill%+4}=o2&
+    CARD{fill%+6}=o2&
+  NEXT fill%
   ' Start pic load
   RESTORE intro_pic
   READ intro_pic_name$
