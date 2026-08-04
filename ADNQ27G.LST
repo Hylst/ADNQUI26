@@ -322,20 +322,11 @@ RETURN
 .
 ' !>
 PROCEDURE vumetre
-  ' Trois barres de 4 pixels, 1 pixel d'ecart, collees au bord droit :
-  ' 306-309, 311-314, 316-319. La zone restauree, 304-319, est alignee sur 16
-  ' pour tomber sur une frontiere de mot : un seul BMOVE de 8 octets par ligne.
-  '
-  ' Dessin dans log% puis stab. La version precedente travaillait en simple
-  ' tampon a y=4, tout en haut de l'ecran : le faisceau y arrive quelques
-  ' centaines de microsecondes apres le VSYNC, bien avant que la restauration
-  ' et les trois PBOX soient finies. On voyait donc l'etat de la trame
-  ' precedente, attrape a des moments differents selon la barre -- d'ou une
-  ' seule barre visible a la fois, et la suivante une image sur deux.
-  '
-  ' Lecture par XBIOS(28,0,reg), le Giaccess du systeme : 8 = voie A, 9 = B,
-  ' 10 = C, bits 3-0 = niveau. Bit 4 a 1 : le volume suit le generateur
-  ' d'enveloppe et les bits 3-0 ne veulent rien dire, on affiche le maximum.
+  ' Trois barres de 4 pixels, 1 d'ecart, collees a droite : 306-309, 311-314,
+  ' 316-319. Zone restauree 304-319, alignee sur 16, un BMOVE de 8 octets par
+  ' ligne. Dessin dans log% puis stab : a y=4 le faisceau arrive trop vite.
+  ' XBIOS(28,0,reg) = Giaccess. 8 = voie A, 9 = B, 10 = C, bits 3-0 = niveau.
+  ' Bit 4 a 1 = volume pilote par l'enveloppe, on affiche le maximum.
   LOCAL v&,c&,h&,yl&,bx&
   FOR yl&=4 TO 19
     BMOVE pic%+t160&(yl&)+152,log%+t160&(yl&)+152,8
@@ -422,14 +413,11 @@ RETURN
 .
 ' !>
 PROCEDURE fx.step
-  ' Une gerbe part toutes les 40 trames. Chaque particule garde sa position en
-  ' seiziemes de pixel, ce qui donne des trajectoires douces sans flottant.
-  ' fvie& sert de compteur et d'index de couleur : la particule refroidit en
-  ' vieillissant.
-  ' Effacement CIBLE. stab alterne les tampons : celui qu'on dessine a ete
-  ' dessine il y a DEUX trames, pas une. On garde donc deux generations de
-  ' positions, indexees par la parite, et on n'efface que celle du tampon
-  ' courant. Une position a -1 signifie que rien n'y a ete dessine.
+  ' Une gerbe de 16 particules toutes les 10 trames, sur 4 emplacements
+  ' tournants : jusqu'a 4 gerbes simultanees a des stades differents.
+  ' Position en seiziemes de pixel, fvie& sert de compteur et d'index de
+  ' couleur. Effacement cible par generation : stab alterne les tampons, celui
+  ' qu'on dessine l'a ete il y a deux trames.
   LOCAL i&,px&,py&,ang&,c&
   fx.par&=1-fx.par&
   FOR i&=0 TO 63
@@ -488,18 +476,10 @@ RETURN
 .
 ' !>
 PROCEDURE scroll.step
-  ' Scrolltext sur les 8 dernieres lignes, par DECALAGE.
-  '
-  ' La bande entiere est poussee de 2 pixels vers la gauche, puis la tranche
-  ' de 2 pixels suivante du caractere courant entre par le bord droit. Deux
-  ' RC_COPY par trame et par tampon, la ou la version precedente effacait la
-  ' bande puis redessinait les 41 caracteres visibles, soit 42 RC_COPY.
-  ' Le caractere entre ainsi progressivement, deux pixels a la fois, au lieu
-  ' d'apparaitre d'un bloc.
-  '
-  ' Le decalage est applique aux DEUX tampons : stab les alterne, et un
-  ' decalage n'est pas reconstructible -- il depend de l'etat precedent de ce
-  ' tampon-la. Les deux restent ainsi en phase.
+  ' Scrolltext sur les 8 dernieres lignes. La bande est poussee de 2 pixels a
+  ' gauche, puis la tranche suivante du caractere courant entre par la droite.
+  ' Applique aux DEUX tampons : un decalage depend de l'etat precedent de son
+  ' tampon, il n'est pas reconstructible comme un redessin complet.
   LOCAL pc&
   ' decaler les deux tampons
   RC_COPY log%,2,192,318,8 TO log%,0,192
@@ -709,19 +689,10 @@ RETURN
 ' !>
 PROCEDURE pixdraw(nh&,nv&)
   ' Construit dans log% la version de pic% pixelisee en blocs nh& x nv&.
-  '
-  ' HORIZONTAL : un masque plus des decalages, au MOT. Les tables d'octets
-  ' precedentes demandaient 160 iterations par ligne ; on en fait 80.
-  ' principe : le masque isole le bit de gauche de chaque bloc, les OR
-  ' decales le recopient sur les bits a sa droite. Equivalence verifiee sur
-  ' 20000 mots aleatoires pour les blocs de 2, 4 et 8.
-  '
-  ' VERTICAL : replication par DOUBLEMENT. Pour 16 lignes, 4 BMOVE (1, 2, 4,
-  ' 8 lignes) au lieu de 15 de 160 octets : meme volume deplace, mais 4x -
-  ' d'appels.
-  '
-  ' niveau 1x1 = simple BMOVE de 32000 octets, au lieu de 200 BMOVE de 160
-  '
+  ' Horizontal : masque plus decalages, en LONG, 40 iterations par ligne. Les
+  ' masques gardent des bits assez loin de la frontiere de mot pour que
+  ' l'etalement ne deborde pas sur le plan voisin.
+  ' Vertical : replication par doublement, 4 BMOVE pour 16 lignes.
   LOCAL yy&,i&,nl&,c&,d&,sl%,dl%,w%
   IF nh&=1 AND nv&=1
     BMOVE pic%,log%,32000
@@ -786,19 +757,11 @@ RETURN
 .
 ' !>
 PROCEDURE pixelisation(duree&)
-  ' Revelation progressive de l'image, du plus gros bloc au pixel pres.
-  '
-  ' 9 niveaux (cf. @pixinit) et 20 bandes revelees par niveau, soit
-  ' 180 etapes visibles. Avec pix.duree&=6000 trames (120 s) cela fait une
-  ' modification a l'ecran toutes les 0,67 s.
-  '
-  ' Le niveau complet est construit hors ecran dans log%, puis devoile bande
-  ' par bande vers phy% (l'ecran visible, cf. @dboff). Aucun stab ici : les
-  ' 2 tampons ne doivent pas s'echanger pendant la revelation, sinon les
-  ' bandes deja devoilees disparaitraient.
-  '
-  ' Le sens de balayage alterne d'un niveau a l'autre pour eviter l'effet
-  ' de volet repetitif. Espace = passage immediat a l'image nette.
+  ' 9 niveaux x 20 bandes = 180 etapes, une modification toutes les 0,67 s
+  ' pour pix.duree&=6000 trames.
+  ' Le niveau est construit hors ecran dans log% puis devoile bande par bande
+  ' vers phy%. Aucun stab ici : un echange ferait disparaitre les bandes deja
+  ' devoilees. Le sens de balayage alterne d'un niveau a l'autre.
   LOCAL niv&,bande&,b2&,tenue&,off%
   pixl_exit&=0
   tenue&=DIV(duree&,180) ! 9 niveaux x 20 bandes
@@ -828,25 +791,11 @@ RETURN
 .
 ' !>
 PROCEDURE dezoom.rc(duree&)
-  ' Effet 3 : dezoom par RC_COPY.
-  '
-  ' recopie un bloc SOURCE de 4x4 pixels et le pave, au lieu d'un seul pixel.
-  ' deformation caracteristique, differente du dezoom net de @pixdraw.
-  '
-  ' Elle est intrinsequement LENTE : environ 4500 RC_COPY par niveau
-  ' passant par le VDI, pas accelere. duree& est donc un
-  ' budget d'ATTENTE reparti entre les niveaux, auquel s'ajoute le temps de
-  ' dessin : passer une valeur modeste, voire 0.
-  '
-  ' L'espace bascule sur @dissolve.to.pic : c le seul moyen de terminer
-  ' vite tout en restant progressif.
-  ' unite recopiee =  bloc SOURCE de 4x4 : des que taille& vaut 4, la
-  ' copie est EXACTE et l'image est deja parfaite.
-  ' L'echelle s'arrete a 4, et compte 9 paliers tous
-  ' multiples de 4 (tuilage exact) au lieu de six dont quatre utiles.
-  ' attente repartie PAR RANGEE de blocs, non prise d'un bloc en fin de niveau.
-  ' Les 13 paliers totalisent 160 rangees ; l'attente par rangee vaut donc
-  ' duree&/160 et la progression reste continue de haut en bas.
+  ' Dezoom par RC_COPY : recopie un bloc SOURCE de 4x4 et le pave, d'ou une
+  ' deformation differente du dezoom net de @pixdraw.
+  ' Lent par nature. duree& est un budget d'attente reparti par rangee, le
+  ' temps de dessin s'y ajoute. 13 paliers multiples de 4 : en dessous de 4 la
+  ' copie serait exacte et plus rien ne bougerait.
   LOCAL cycle&,taille&,x&,y&,i&,j&,bh&,bl&,tr&
   tr&=DIV(duree&,160) ! 13 paliers totalisant 160 rangees
   IF tr&<1
@@ -894,15 +843,9 @@ RETURN
 .
 ' !>
 PROCEDURE dissolve.to.pic(trames&)
-  ' Devoile pic% ligne par ligne, dans un ordre aleatoire, en trames& trames.
-  '
-  ' Fin progressive COMMUNE a tous les effets : appuyer sur espace ne fait
-  ' jamais apparaitre l'image d'un coup, l'effet en cours est abandonne et
-  ' l'image se revele en dissolve sur 2 secondes.
-  '
-  ' Utile en particulier pour les effets naturellement lents (dezoom RC_COPY)
-  ' qui ne peuvent pas etre acceleres : on ne les accelere pas, on bascule sur
-  ' cette revelation-ci, qui reste progressive et de duree connue.
+  ' Devoile pic% ligne par ligne en ordre aleatoire, en trames& trames.
+  ' Fin commune a tous les effets : l'espace n'affiche jamais l'image d'un
+  ' coup. Sert surtout aux effets lents qu'on ne peut pas accelerer.
   LOCAL i&,r&,temp&,k&,parlot&,n&
   FOR i&=0 TO 199
     lignes&(i&)=i&
@@ -974,21 +917,11 @@ RETURN
 .
 ' !>
 PROCEDURE txt.anim(a1$,a2$)
-  ' Ondulation ANIMEE du texte, jusqu'a ENTREE ou BACKSPACE.
-  '
-  ' Le fond sous le texte est l'IMAGE ELLE-MEME, deja en memoire dans pic%
-  ' restaurer la bande = BMOVE
-  '
-  ' DOUBLE TAMPON. La 1ere version dessinait sur phy%, l'ecran visible :
-  ' entre l'effacement de la bande et le redessin du texte, le faisceau
-  ' pouvait passer et montrer la bande vide, d'ou un fort clignotement.
-  ' Tout est desormais construit dans log%, hors ecran, et stab echange a la fin
-  ' Les 2 tampons contiennent l'image (les effets de revelation la copient
-  ' dans les 2), et la bande est entierement reconstruite a chaque trame :
-  ' l'alternance ne pose donc aucun probleme.
-  '
-  ' BANDE 122-166. area.lines.erase salit de yb&-5 a yb&+char.height&+3, soit
-  ' 125 a 141 et 145 a 161
+  ' Ondulation animee du texte jusqu'a ENTREE ou BACKSPACE.
+  ' Le fond est l'image elle-meme : un BMOVE de 7200 octets restaure les 45
+  ' lignes contigues de la bande 122-166.
+  ' Construit dans log% puis stab, sinon le faisceau surprend la bande entre
+  ' l'effacement et le redessin.
   txt.phase&=0
   REPEAT
     BMOVE pic%+19520,log%+19520,7200 ! lignes 122 a 166
@@ -1165,15 +1098,9 @@ RETURN
 .
 ' !>
 PROCEDURE clampcol
-  ' Borne cr&/cv&/cb& puis les reencode en quartets STE dans nr&/nv&/nb&.
-  '
-  ' Bornage : l'expression x-(x/7)*it& passe par le flottant. A la premiere
-  ' etape (it&=7) elle doit rendre 0 mais peut rendre une valeur infime
-  ' negative. Un cr& a -1 devenait $FFFF, et SHL(cr&,8) allumait alors des
-  ' bits dans les quartets voisins : d'ou le flash blanc observe.
-  '
-  ' Encodage STE : quartet = (LSB en bit 3) + (3 bits de poids fort).
-  ' Sur STF le bit 3 est ignore par le materiel, la valeur reste correcte.
+  ' Borne cr&/cv&/cb& puis les encode en quartets STE dans nr&/nv&/nb&.
+  ' Quartet STE = LSB en bit 3 plus les 3 bits de poids fort ; sur STF le bit 3
+  ' est ignore, la valeur reste correcte.
   IF cr&<0
     cr&=0
   ENDIF
