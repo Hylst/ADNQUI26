@@ -1,11 +1,6 @@
-# Documentation de travail : seul README.md est publie
-AGENTS.md
-CLAUDE.md
-FEATURES.md
-STRUCT.md
-changelog.md
-continue.md
-todo.md
+# Notes de travail : seul README.md est publie
+*.md
+!README.md
 
 # Travaux graphiques en cours et archives
 GFX_WIP/
