@@ -1398,37 +1398,6 @@ PROCEDURE user
   ~GEMDOS(32,L:super%)                             !<
 RETURN
 .
-PROCEDURE pal.order.by.lum
-  ' create an array with color numbers indexed according to luminance (lighter to darker)
-  IF NOT DIM?(bas.pal&())
-    DIM bas.pal&(15),ord.pal&(15)
-  ENDIF
-  ' calcul moyennes comp rvb
-  FOR c&=0 TO 14
-    col&=CARD{&HFFFF8242+c&+c&}
-    r&=SHR(col&,8) AND 7
-    v&=SHR(col&,4) AND 7
-    b&=col& AND 7
-    bas.pal&(c&)=r&+v&+b&
-    ord.pal&(c&)=c&
-  NEXT c&
-  FOR c&=0 TO 14 !  pour chaque index de couleur
-    max&=-1
-    vax&=-1
-    FOR r&=0 TO 14 ! ' scan tableau pour trouver le + grand
-      IF bas.pal&(r&)>max&  ! si valeur + grande
-        max&=bas.pal&(r&) ! on enreg la valeur
-        vax&=r& ! ainsi que sa position
-      ENDIF
-      ord.pal&(c&)=vax& ! num de couleur correspondant e la lumiere la+ intense
-      bas.pal&(vax&)=-2 ! -2 pour etre sur de ne pas la recomptabiliser
-    NEXT r&
-  NEXT c&
-  '  BMOVE V:bas.pal&(0),V:ord.oal&(0),15*2
-  ERASE bas.pal&()
-  '  QSORT ord.pal&(),15
-RETURN
-.
 PROCEDURE vdicol
   ' use gemcol|(couleur) with deffill, defftext, defmark, color, etc.
   ' to match vdi colours with linea or physical palette of video shifter &hffff8240
@@ -1935,20 +1904,72 @@ PROCEDURE fast_ptst_scan
   WEND
 RETURN
 .
+'
+' *************************************************************************************************
+' *                          OPTIONNELS - NON UTILISES                                            *
+' *************************************************************************************************
+' Procedures conservees mais qu'aucun chemin n'appelle. Elles peuvent resservir ;
+' les defauts connus sont signales sur place.
+.
+' !>
+PROCEDURE pal.order.by.lum
+  ' Range les 16 index de la palette materielle du plus clair au plus sombre
+  ' dans ord.pal&(). Personne ne l'appelle : test_color_contrast fait le tri
+  ' dont le programme a besoin, directement depuis pal%.
+  ' Trois corrections : les affectations de fin de passe etaient DANS la boucle
+  ' interne et detruisaient le tableau pendant le balayage ; la lecture partait
+  ' du registre 1 en stockant l'indice 0 ; AND 7 jetait le 4e bit des
+  ' composantes STE (cf. @fadeon).
+  ' Un seul appel : le DIM ci-dessous echouerait au second. Deplacer les deux
+  ' DIM dans @hello si le besoin d'appels repetes se presente.
+  LOCAL c&,r2&,col&,rr&,vv&,bb&,n&,max&,vax&
+  DIM bas.pal&(15),ord.pal&(15)
+  FOR c&=0 TO 15
+    col&=CARD{&HFFFF8240+c&+c&}
+    n&=SHR(col&,8) AND 15
+    rr&=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+    n&=SHR(col&,4) AND 15
+    vv&=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+    n&=col& AND 15
+    bb&=SHL&((n& AND 7),1)+SHR&((n& AND 8),3)
+    ' Luminance ponderee : le vert pese le plus, le bleu le moins.
+    bas.pal&(c&)=MUL(rr&,3)+MUL(vv&,6)+bb&
+  NEXT c&
+  FOR c&=0 TO 15
+    max&=-1
+    vax&=0
+    FOR r2&=0 TO 15
+      IF bas.pal&(r2&)>max&
+        max&=bas.pal&(r2&)
+        vax&=r2&
+      ENDIF
+    NEXT r2&
+    ord.pal&(c&)=vax&
+    bas.pal&(vax&)=-2 ! marquee comme deja classee
+  NEXT c&
+RETURN
+.
+' !>
+.
 PROCEDURE create_outline_font(width&,height&,color_filled&,color_outline&)
-  ' Cree un outline autour des pixels <> 0
-  ' encore non utilise avec fonte actuelle 8x8 voisins immediats
+  ' Entoure d'un contour color_outline& les pixels non nuls du rectangle
+  ' (1,1)-(width&-2,height&-2), et repeint le texte en color_filled&.
+  ' Couleurs en index VDI, pas en registre materiel : passer vdicol|(reg).
+  ' Le contour est trace pendant le balayage : sans le test <>color_outline&
+  ' ci-dessous, les pixels de contour deja poses seraient relus comme du texte
+  ' et le contour s'epaissirait de proche en proche. color_outline& ne doit donc
+  ' pas figurer dans le glyphe d'origine, et doit differer de color_filled&.
+  ' Lent : PTST/PSET passent par le VDI. Pour la fonte 8x8, prevoir un passage
+  ' par plans de bits (cf. @pixdraw) si l'effet est retenu.
+  LOCAL x&,y&,dx&,dy&,p&
   FOR y&=1 TO height&-2
     FOR x&=1 TO width&-2
-      IF PTST(x&,y&)<>0
-        ' Pixel texte original
+      p&=PTST(x&,y&)
+      IF p&<>0 AND p&<>color_outline&
         PSET x&,y&,color_filled&
-        ' Pixels autour : outline
         FOR dy&=-1 TO 1
           FOR dx&=-1 TO 1
-            IF dx&=0 AND dy&=0
-              ' centre = deja trace
-            ELSE
+            IF dx&<>0 OR dy&<>0 ! le centre vient d'etre trace
               IF PTST(x&+dx&,y&+dy&)=0
                 PSET x&+dx&,y&+dy&,color_outline&
               ENDIF
@@ -1961,7 +1982,10 @@ PROCEDURE create_outline_font(width&,height&,color_filled&,color_outline&)
 RETURN
 '
 PROCEDURE slow_fadeon
-  ' to implement
+  ' Fondu plus lent que @fadeon, non ecrit. @fadeon fait 25 paliers de deux
+  ' VSYNC, soit une seconde : pour l'allonger, ajouter des VSYNC dans sa
+  ' boucle. Monter au-dela de 25 paliers n'apporterait rien, la palette n'ayant
+  ' que 16 niveaux par composante.
 RETURN
 .
 '
