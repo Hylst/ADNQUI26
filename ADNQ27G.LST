@@ -418,11 +418,13 @@ RETURN
 PROCEDURE finale
   ' Ecran de fin : feu d'artifice en boucle, credits en scrolltext sur les 8
   ' dernieres lignes. Espace sort et rend la main a bye, qui restaure le GEM.
-  scroll$="   QUIZZ CODE BY HYLST   .   CODE SUPPORT BY TOMCHI   -"
-  scroll$=scroll$+"   QUIZZ TRACKS BY AD AND DMA SC   .   INTRO MUSIC BY JESS   -"
-  scroll$=scroll$+"   THIS MUSIC BY AD   .   FONT BY HYLST   -"
-  scroll$=scroll$+"   MERCI POUR VOTRE PARTICIPATION ET BRAVO POUR LES REPONSES"
-  scroll$=scroll$+" TROUVEES   .   "
+  scroll$="      C EST FINI !   BRAVO A CEUX QUI ONT TROUVE, "
+  scroll$=scroll$+"ET COURAGE AUX AUTRES.   .   "
+  scroll$=scroll$+"CODE : HYLST, AVEC UN COUP DE MAIN DE TOMCHI.   "
+  scroll$=scroll$+"MUSIQUES : AD ET DMA SC, INTRO PAR JESS.   FONTES : HYLST.   .   "
+  scroll$=scroll$+"ECRIT EN GFA BASIC 3 SUR UNE MACHINE DE 1985, "
+  scroll$=scroll$+"PARCE QU IL FAUT BIEN S OCCUPER.   .   "
+  scroll$=scroll$+"ESPACE POUR RENDRE LA MAIN AU BUREAU.      "
   ' Palette propre au feu d'artifice. @clearpal a mis tous les registres a
   ' zero et le seul XBIOS(6) qui les restaurait etait dans screen.opening,
   ' desormais commente : sans cette rampe tout serait dessine noir sur noir.
@@ -484,11 +486,18 @@ PROCEDURE fx.step
   ' Position en seiziemes de pixel, fvie& sert de compteur et d'index de
   ' couleur. Effacement cible par generation : stab alterne les tampons, celui
   ' qu'on dessine l'a ete il y a deux trames.
-  LOCAL i&,px&,py&,ang&,c&
+  LOCAL i&,px&,py&,ang&,c&,ad%,mk&,nm&
   fx.par&=1-fx.par&
   FOR i&=0 TO 63
     IF epx&(fx.par&,i&)>=0
-      cpset(epx&(fx.par&,i&),epy&(fx.par&,i&),log%,0)
+      ' cpset recopie ici : c'etait 128 appels de procedure par trame. En
+      ' couleur 0 les quatre plans tombent, donc un simple ET sur chacun.
+      ad%=log%+t160&(epy&(fx.par&,i&))+SHL&(SHR&(epx&(fx.par&,i&),4),3)
+      nm&=NOT SHL&(1,15-AND(epx&(fx.par&,i&),15))
+      CARD{ad%}=CARD{ad%} AND nm&
+      CARD{ad%+2}=CARD{ad%+2} AND nm&
+      CARD{ad%+4}=CARD{ad%+4} AND nm&
+      CARD{ad%+6}=CARD{ad%+6} AND nm&
       epx&(fx.par&,i&)=-1
     ENDIF
   NEXT i&
@@ -530,7 +539,23 @@ PROCEDURE fx.step
         IF c&>15
           c&=15
         ENDIF
-        cpset(px&,py&,log%,c&) ! la couleur refroidit avec la vie
+        ' Dessin par OU seul, la position venant d'etre liberee. Deux
+        ' particules qui se croisent melangent leurs bits et donnent un point
+        ' plus clair : pour un feu d'artifice c'est plutot heureux.
+        ad%=log%+t160&(py&)+SHL&(SHR&(px&,4),3)
+        mk&=SHL&(1,15-AND(px&,15))
+        IF (c& AND 1)
+          CARD{ad%}=CARD{ad%} OR mk&
+        ENDIF
+        IF (c& AND 2)
+          CARD{ad%+2}=CARD{ad%+2} OR mk&
+        ENDIF
+        IF (c& AND 4)
+          CARD{ad%+4}=CARD{ad%+4} OR mk&
+        ENDIF
+        IF (c& AND 8)
+          CARD{ad%+6}=CARD{ad%+6} OR mk&
+        ENDIF
         epx&(fx.par&,i&)=px&
         epy&(fx.par&,i&)=py&
       ELSE
