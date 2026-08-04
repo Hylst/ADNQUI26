@@ -336,12 +336,13 @@ PROCEDURE vumetre
   ' Lecture par XBIOS(28,0,reg), le Giaccess du systeme : 8 = voie A, 9 = B,
   ' 10 = C, bits 3-0 = niveau. Bit 4 a 1 : le volume suit le generateur
   ' d'enveloppe et les bits 3-0 ne veulent rien dire, on affiche le maximum.
-  LOCAL v&,c&,h&,yl&
+  LOCAL v&,c&,h&,yl&,bx&
   FOR yl&=4 TO 19
     BMOVE pic%+t160&(yl&)+152,log%+t160&(yl&)+152,8
   NEXT yl&
   COLOR vdicol|(ink_col&)
   DEFFILL vdicol|(ink_col&)
+  bx&=306
   FOR c&=0 TO 2
     v&=XBIOS(28,0,ADD(8,c&))
     IF (v& AND 16)
@@ -350,8 +351,9 @@ PROCEDURE vumetre
       h&=v& AND 15
     ENDIF
     IF h&>0
-      PBOX ADD(306,MUL(c&,5)),20-h&,ADD(309,MUL(c&,5)),19
+      PBOX bx&,20-h&,bx&+3,19
     ENDIF
+    ADD bx&,5 ! avance par addition plutot que MUL(c&,5)
   NEXT c&
 RETURN
 .
@@ -438,9 +440,14 @@ PROCEDURE fx.step
   NEXT i&
   DEC fx.delai&
   IF fx.delai&<1
-    fx.delai&=20 ! gerbe plus frequente mais deux fois plus petite
-    fx.cx&=MUL(ADD(40,RANDOM(240)),16)
-    fx.cy&=MUL(ADD(40,RANDOM(90)),16)
+    ' Une gerbe toutes les 10 trames sur quatre emplacements tournants : le
+    ' tableau de 64 particules porte donc jusqu'a quatre gerbes simultanees, a
+    ' des stades differents. L'ecran est mieux couvert et la charge devient
+    ' reguliere, chaque pic d'initialisation etant identique. Un emplacement
+    ' est reutilise toutes les 40 trames, au-dela de la vie maximale de 39.
+    fx.delai&=10
+    fx.cx&=SHL&(ADD(40,RANDOM(240)),4) ! x16 par decalage
+    fx.cy&=SHL&(ADD(40,RANDOM(90)),4)
     ' 16 particules par gerbe au lieu de 32 : l'initialisation, avec ses
     ' RANDOM, tenait sur une seule trame et produisait un a-coup periodique.
     FOR i&=fx.slot& TO fx.slot&+15
@@ -451,7 +458,10 @@ PROCEDURE fx.step
       fvy&(i&)=MUL(sinus&(AND(ADD(ang&,4),15)),ADD(6,RANDOM(6)))
       fvie&(i&)=ADD(24,RANDOM(16))
     NEXT i&
-    fx.slot&=32-fx.slot& ! alterner les deux moities du tableau
+    ADD fx.slot&,16
+    IF fx.slot&>48
+      fx.slot&=0
+    ENDIF
   ENDIF
   FOR i&=0 TO 63
     IF fvie&(i&)>0
@@ -942,21 +952,23 @@ PROCEDURE txt.ligne(t$,yb&,freq&,dph&)
   ' freq& : nombre de crans de la table par caractere : 1 donne une vague
   '   longue, 2 une vague deux fois plus serree.
   ' dph& : decalage de phase, pour desynchroniser deux lignes.
-  LOCAL nc&,c&,px&,pc&,yv&
+  LOCAL nc&,c&,px&,pc&,yv&,ac&
   nc&=PRED(LEN(t$))
   IF nc&>38
     t$=LEFT$(t$,38)
     nc&=PRED(LEN(t$))
   ENDIF
   px&=160-(nc&+1)*char.width&/2
+  ac&=freq& ! avance par addition plutot que MUL(c&,freq&)
   FOR c&=1 TO SUCC(nc&)
     pc&=PRED(INSTR(font.chars$,MID$(t$,c&,1)))
     IF pc&>=0 AND pc&<43 ! -1 = caractere hors police
-      yv&=yb&+sinus&(AND(ADD(MUL(c&,freq&),ADD(txt.phase&,dph&)),15))
+      yv&=yb&+sinus&(AND(ADD(ac&,ADD(txt.phase&,dph&)),15))
       RC_COPY fmask%,56,0,8,8 TO log%,px&,yv&
       RC_COPY font%,bitmap.char.x&(pc&),bitmap.char.y&(pc&),char.width&,char.height& TO log%,px&,yv&,1
     ENDIF
     ADD px&,char.width&
+    ADD ac&,freq&
   NEXT c&
 RETURN
 .
@@ -1754,7 +1766,7 @@ PROCEDURE random_pixels(duree&)
     b&=ordre&(i&)
     bx&=MOD(b&,20)
     by&=DIV(b&,20)
-    off%=MUL(by&,640)+MUL(bx&,8) ! 4 lignes de 160, un mot par plan
+    off%=MUL(by&,640)+SHL&(bx&,3) ! 4 lignes de 160, un mot par plan
     BMOVE pic%+off%,phy%+off%,8
     ADD off%,160
     BMOVE pic%+off%,phy%+off%,8
