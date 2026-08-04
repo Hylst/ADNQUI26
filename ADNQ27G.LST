@@ -408,14 +408,18 @@ PROCEDURE note3d.init
   ' la tete est un octogone trace deux fois, decale de +/- n3.ep& en Z, la tige
   ' et le crochet restent dans le plan Z=0. Quatre aretes relient les deux
   ' octogones, un sommet sur deux, ce qui suffit a donner le volume.
-  ' Table sinus 64 pas en virgule fixe 7 bits : n3sin&() va de -127 a +127,
+  ' Table sinus 256 pas en virgule fixe 7 bits : n3sin&() va de -127 a +127,
   ' le cosinus est le meme tableau decale d'un quart de tour.
-  LOCAL i&
+  ' 256 pas et non 64 : avec 64 pas les axes X et Z n'avancaient que d'un cran
+  ' toutes les 2 et 4 trames, ils restaient immobiles entre deux - d'ou une
+  ' saccade reguliere a 25 et 12 Hz. Ici chaque axe bouge a chaque trame.
+  LOCAL i&,j&
   DIM n3hx&(7),n3hy&(7),n3tx&(4),n3ty&(4)
   DIM n3px&(20),n3py&(20),n3ax&(8),n3ay&(8)
-  DIM n3sin&(63)
-  FOR i&=0 TO 63
-    n3sin&(i&)=ROUND(127*SIN(6.2831853*i&/64))
+  DIM n3rx&(7,20),n3ry&(7,20)
+  DIM n3sin&(255)
+  FOR i&=0 TO 255
+    n3sin&(i&)=ROUND(127*SIN(6.2831853*i&/256))
   NEXT i&
   RESTORE note3d.modele
   FOR i&=0 TO 7
@@ -424,24 +428,37 @@ PROCEDURE note3d.init
   FOR i&=0 TO 4
     READ n3tx&(i&),n3ty&(i&)
   NEXT i&
-  n3.cx&=256
-  n3.cy&=100
+  n3.cx&=56
+  n3.cy&=60
   n3.ep&=6 ! demi-epaisseur de la tete
-  ' Trois phases comptees en quarts de pas, ramenees a 0-63 a la lecture de la
-  ' table. Y avance de 4, X de 2, Z de 1 : un tour en 1,3 s, 2,6 s et 5,1 s.
-  ' Les trois periodes ne retombent jamais ensemble sur une trame, la croche ne
-  ' repasse donc pas par la meme pose.
+  ' Trois angles sur 256 pas. Y avance de 4, X de 2, Z de 1 : un tour en 1,3 s,
+  ' 2,6 s et 5,1 s. Les trois periodes ne retombent jamais ensemble sur une
+  ' trame, la croche ne repasse donc pas par la meme pose.
   n3.fx&=0
   n3.fy&=0
   n3.fz&=0
-  ' Boite restauree a chaque trame, calee sur 16 pixels. Sur les 64x64x64
-  ' orientations possibles le dessin tient dans x 217-294 et y 61-138, ce qui
-  ' rentre dans x 208-303, soit 48 octets a partir du 104e. La boite evite le
-  ' VU-metre (x>=304, y<=19) et le scrolltext (y>=178).
-  n3.ob&=104
-  n3.lg&=48
-  n3.y1&=61
-  n3.y2&=138
+  ' Trainee : n3.tr& poses precedentes redessinees derriere la croche, prises
+  ' toutes les 2 trames dans l'anneau n3rx&/n3ry&. Rien n'est recalcule, ce sont
+  ' des points deja projetes ; seul le trace coute. Registres 13 et 14, les gris
+  ' sombres poses par @intro_quizz pour la fonte du scrolltext, ce qui donne
+  ' l'estompage sans mobiliser de couleur supplementaire.
+  ' Mettre 0 si la trame ne tient plus, 3 si elle tient large.
+  n3.tr&=2
+  n3.rp&=0
+  FOR i&=0 TO 7
+    FOR j&=0 TO 20
+      n3rx&(i&,j&)=n3.cx&
+      n3ry&(i&,j&)=n3.cy&
+    NEXT j&
+  NEXT i&
+  ' Boite restauree a chaque trame, calee sur 16 pixels. Sur toutes les
+  ' orientations le dessin s'ecarte du centre de -40 a +38 dans les deux sens,
+  ' soit x 16-94 et y 20-98 : la boite prend x 16-95, 40 octets a partir du 8e.
+  ' Elle evite le VU-metre (x>=304, y<=19) et le scrolltext (y>=178).
+  n3.ob&=8
+  n3.lg&=40
+  n3.y1&=20
+  n3.y2&=98
 note3d.modele:
 ' Croche, +y vers le BAS. D'abord la tete, octogone de rayons 14 x 10 incline
 ' de 20 degres, puis la tige et le crochet dans l'ordre du trace.
@@ -467,8 +484,8 @@ PROCEDURE note3d.step
   ' est recopie vers les bits 16 a 31 "preservant ainsi le signe", ce qui laisse
   ' entendre un decalage arithmetique sans le dire ; le biais rend la question
   ' sans objet et coute deux additions contre une division.
-  LOCAL i&,x&,y&,vx&,vy&,vz&,dn&,s%,d%
-  LOCAL ax&,ay&,az&,rsx&,rcx&,rsy&,rcy&,rsz&,rcz&,sysx&,sycx&
+  LOCAL i&,g&,r&,x&,y&,vx&,vy&,vz&,dn&,s%,d%
+  LOCAL rsx&,rcx&,rsy&,rcy&,rsz&,rcz&,sysx&,sycx&
   LOCAL m11&,m12&,m13&,m21&,m22&,m23&,m31&,m32&,m33&,ex&,ey&,ez&
   s%=ADD(pic%,ADD(t160&(n3.y1&),n3.ob&))
   d%=ADD(log%,ADD(t160&(n3.y1&),n3.ob&))
@@ -477,15 +494,12 @@ PROCEDURE note3d.step
     ADD s%,160
     ADD d%,160
   NEXT i&
-  ax&=SHR&(n3.fx&,2)
-  ay&=SHR&(n3.fy&,2)
-  az&=SHR&(n3.fz&,2)
-  rsx&=n3sin&(ax&)
-  rcx&=n3sin&(AND(ADD(ax&,16),63))
-  rsy&=n3sin&(ay&)
-  rcy&=n3sin&(AND(ADD(ay&,16),63))
-  rsz&=n3sin&(az&)
-  rcz&=n3sin&(AND(ADD(az&,16),63))
+  rsx&=n3sin&(n3.fx&)
+  rcx&=n3sin&(AND(ADD(n3.fx&,64),255))
+  rsy&=n3sin&(n3.fy&)
+  rcy&=n3sin&(AND(ADD(n3.fy&,64),255))
+  rsz&=n3sin&(n3.fz&)
+  rcz&=n3sin&(AND(ADD(n3.fz&,64),255))
   sysx&=SUB(SHR(ADD(MUL(rsy&,rsx&),65536),7),512)
   sycx&=SUB(SHR(ADD(MUL(rsy&,rcx&),65536),7),512)
   m11&=SUB(SHR(ADD(MUL(rcz&,rcy&),65536),7),512)
@@ -524,6 +538,43 @@ PROCEDURE note3d.step
     n3px&(ADD(i&,16))=ADD(n3.cx&,DIV(SHL(vx&,8),dn&))
     n3py&(ADD(i&,16))=ADD(n3.cy&,DIV(SHL(vy&,8),dn&))
   NEXT i&
+  ' Pose du jour rangee dans l'anneau, puis trainee : les poses d'il y a 2 et
+  ' 4 trames, redessinees telles quelles. Sans les aretes de liaison, elles
+  ' n'ajoutent rien de lisible a cette taille.
+  FOR i&=0 TO 20
+    n3rx&(n3.rp&,i&)=n3px&(i&)
+    n3ry&(n3.rp&,i&)=n3py&(i&)
+  NEXT i&
+  IF n3.tr&>0
+    FOR g&=1 TO n3.tr&
+      r&=AND(ADD(n3.rp&,SUB(8,SHL&(g&,1))),7) ! +8-2g plutot que -2g, on reste positif
+      IF g&=1
+        COLOR vdicol|(14)
+      ELSE
+        COLOR vdicol|(13)
+      ENDIF
+      FOR i&=0 TO 7
+        n3ax&(i&)=n3rx&(r&,i&)
+        n3ay&(i&)=n3ry&(r&,i&)
+      NEXT i&
+      n3ax&(8)=n3rx&(r&,0)
+      n3ay&(8)=n3ry&(r&,0)
+      POLYLINE 9,n3ax&(),n3ay&()
+      FOR i&=0 TO 7
+        n3ax&(i&)=n3rx&(r&,ADD(i&,8))
+        n3ay&(i&)=n3ry&(r&,ADD(i&,8))
+      NEXT i&
+      n3ax&(8)=n3rx&(r&,8)
+      n3ay&(8)=n3ry&(r&,8)
+      POLYLINE 9,n3ax&(),n3ay&()
+      FOR i&=0 TO 4
+        n3ax&(i&)=n3rx&(r&,ADD(i&,16))
+        n3ay&(i&)=n3ry&(r&,ADD(i&,16))
+      NEXT i&
+      POLYLINE 5,n3ax&(),n3ay&()
+    NEXT g&
+  ENDIF
+  n3.rp&=AND(SUCC(n3.rp&),7)
   COLOR vdicol|(ink_col&)
   ' Trois POLYLINE plutot que dix-huit LINE : un seul appel VDI par contour.
   FOR i&=0 TO 7
@@ -1866,7 +1917,7 @@ PROCEDURE scrambling(duree&)
   ' Meme interface que pixelisation : duree& en trames (50 par seconde),
   ' sortie anticipee si l'espace est presse.
   '
-  LOCAL i&,j&,maxcycle&,cycle&,r&,temp&,seuil&,tenue&,l_source%,l_dest%
+  LOCAL i&,j&,k&,maxcycle&,cycle&,r&,temp&,seuil&,deja&,tenue&,l_source%,l_dest%
   maxcycle&=100 ! 100 cycles : 2 lignes remises en place par cycle
   tenue&=DIV(duree&,maxcycle&)
   FOR i&=0 TO 199
@@ -1879,21 +1930,43 @@ PROCEDURE scrambling(duree&)
     lignes&(i&)=lignes&(r&)
     lignes&(r&)=temp&
   NEXT i&
+  ' Ordre de remise en place, lui aussi tire au sort. Sans lui les lignes
+  ' etaient recalees de 0 vers 199, donc l'image se reformait du haut vers le
+  ' bas au lieu d'apparaitre par lignes dispersees.
+  ' ordre&() est le tableau de @random_pixels, qui le reconstruit a chaque
+  ' appel : les deux effets ne tournent jamais en meme temps.
+  FOR i&=0 TO 199
+    ordre&(i&)=i&
+  NEXT i&
+  FOR i&=199 TO 1 STEP -1
+    r&=RANDOM(i&)
+    temp&=ordre&(i&)
+    ordre&(i&)=ordre&(r&)
+    ordre&(r&)=temp&
+  NEXT i&
   pixl_exit&=0
+  deja&=0
   FOR cycle&=1 TO maxcycle&
     seuil&=DIV(MUL(199,cycle&),maxcycle&)
-    FOR i&=0 TO seuil&
-      IF lignes&(i&)<>i&
-        FOR j&=SUCC(i&) TO 199
-          IF lignes&(j&)=i&
-            temp&=lignes&(i&)
-            lignes&(i&)=lignes&(j&)
-            lignes&(j&)=temp&
-          ENDIF
-          EXIT IF lignes&(i&)=i&
-        NEXT j&
-      ENDIF
-    NEXT i&
+    ' Balayage sur tout le tableau et non a partir de i& : les lignes deja
+    ' calees ne sont plus forcement celles du haut. Une ligne calee ne risque
+    ' rien, si lignes&(j&)=i& avec j& deja cale alors j&=i& et on ne fait rien.
+    IF seuil&>=deja&
+      FOR k&=deja& TO seuil&
+        i&=ordre&(k&)
+        IF lignes&(i&)<>i&
+          FOR j&=0 TO 199
+            IF lignes&(j&)=i&
+              temp&=lignes&(i&)
+              lignes&(i&)=lignes&(j&)
+              lignes&(j&)=temp&
+            ENDIF
+            EXIT IF lignes&(i&)=i&
+          NEXT j&
+        ENDIF
+      NEXT k&
+      deja&=SUCC(seuil&)
+    ENDIF
     VSYNC
     FOR i&=0 TO 199
       l_source%=pic%+t160&(lignes&(i&))
