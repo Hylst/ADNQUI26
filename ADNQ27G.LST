@@ -224,6 +224,7 @@ PROCEDURE intro_quizz
   CARD{&HFFFF8240+28}=&H444
   CARD{&HFFFF8240+30}=&HDDD
   @scroll2.init
+  @note3d.init
 RETURN
 .
 ' !>
@@ -241,6 +242,7 @@ PROCEDURE quizz
     matouche&=BYTE{&HFFFC02}
     @vumetre
     @scroll2.step
+    @note3d.step
     stab
   UNTIL matouche&=&H39 ! IF SPACE PRESSED
   @wait.release
@@ -373,6 +375,97 @@ PROCEDURE scroll2.step
       s2.car&=0
     ENDIF
   ENDIF
+RETURN
+.
+' !>
+PROCEDURE note3d.init
+  ' Croche en fil de fer pour l'ecran d'intro. 21 sommets : la tete est un
+  ' octogone extrude de +/-6 en Z (faces avant et arriere reliees par quatre
+  ' aretes), la tige et le crochet restent plans. Tourne autour de Y.
+  ' Table sinus 64 pas en virgule fixe 8 bits : n3sin&() vaut -256 a +256,
+  ' le cosinus est le meme tableau decale d'un quart de tour.
+  LOCAL i&
+  DIM n3x&(20),n3y&(20),n3z&(20),n3px&(20),n3py&(20)
+  DIM n3ax&(8),n3ay&(8)
+  DIM n3sin&(63)
+  FOR i&=0 TO 63
+    n3sin&(i&)=ROUND(256*SIN(6.2831853*i&/64))
+  NEXT i&
+  RESTORE note3d.modele
+  FOR i&=0 TO 20
+    READ n3x&(i&),n3y&(i&),n3z&(i&)
+  NEXT i&
+  ' Centre a l'ecran, hors du VU-metre (x>=304, y<=19) et du scrolltext
+  ' (y>=178). La boite restauree est calee sur 16 pixels : x 224 a 287, soit
+  ' 112 octets depuis le bord gauche et 32 octets de large.
+  n3.cx&=250
+  n3.cy&=100
+  n3.y1&=61
+  n3.y2&=139
+  n3.ang&=0
+note3d.modele:
+' Croche, +y vers le BAS. Tete avant (z=-6), tete arriere (z=+6), tige et
+' crochet (z=0). Octogone de tete : rayons 14 x 10, incline de 20 degres.
+DATA 3,19,-6,2,27,-6,-7,33,-6,-17,34,-6
+DATA -23,29,-6,-22,21,-6,-13,15,-6,-3,14,-6
+DATA 3,19,6,2,27,6,-7,33,6,-17,34,6
+DATA -23,29,6,-22,21,6,-13,15,6,-3,14,6
+DATA 4,20,0,4,-36,0,12,-30,0,18,-20,0
+DATA 16,-8,0
+RETURN
+.
+' !>
+PROCEDURE note3d.step
+  ' Une trame. La boite est d'abord remise a l'image d'intro depuis pic%,
+  ' qui la contient encore intacte, puis les 21 sommets sont tournes autour
+  ' de Y et projetes : Xv=xv*d/(zv+d) (real-time-3d-gfx-atari-st p.79).
+  ' Tout est reconstruit a chaque trame, donc les deux tampons de stab
+  ' recoivent une image complete - pas de dessin incremental ici.
+  ' DIV et non SHR pour le /256 : les coordonnees sont signees et aucune
+  ' source du corpus ne documente SHR sur un negatif.
+  LOCAL i&,sn&,cs&,x1&,z1&,dn&,s%,d%
+  s%=pic%+t160&(n3.y1&)+112
+  d%=log%+t160&(n3.y1&)+112
+  FOR i&=n3.y1& TO n3.y2&
+    BMOVE s%,d%,32
+    ADD s%,160
+    ADD d%,160
+  NEXT i&
+  sn&=n3sin&(n3.ang&)
+  cs&=n3sin&(AND(ADD(n3.ang&,16),63))
+  FOR i&=0 TO 20
+    x1&=DIV(MUL(n3x&(i&),cs&)-MUL(n3z&(i&),sn&),256)
+    z1&=DIV(MUL(n3x&(i&),sn&)+MUL(n3z&(i&),cs&),256)
+    dn&=ADD(z1&,256) ! jamais nul : |z1&| plafonne a 40
+    n3px&(i&)=ADD(n3.cx&,DIV(SHL(x1&,8),dn&))
+    n3py&(i&)=ADD(n3.cy&,DIV(SHL(n3y&(i&),8),dn&))
+  NEXT i&
+  COLOR vdicol|(ink_col&)
+  ' Trois POLYLINE plutot que dix-huit LINE : un seul appel VDI par contour.
+  FOR i&=0 TO 7
+    n3ax&(i&)=n3px&(i&)
+    n3ay&(i&)=n3py&(i&)
+  NEXT i&
+  n3ax&(8)=n3px&(0)
+  n3ay&(8)=n3py&(0)
+  POLYLINE 9,n3ax&(),n3ay&()
+  FOR i&=0 TO 7
+    n3ax&(i&)=n3px&(ADD(i&,8))
+    n3ay&(i&)=n3py&(ADD(i&,8))
+  NEXT i&
+  n3ax&(8)=n3px&(8)
+  n3ay&(8)=n3py&(8)
+  POLYLINE 9,n3ax&(),n3ay&()
+  FOR i&=0 TO 4
+    n3ax&(i&)=n3px&(ADD(i&,16))
+    n3ay&(i&)=n3py&(ADD(i&,16))
+  NEXT i&
+  POLYLINE 5,n3ax&(),n3ay&()
+  ' Un sommet sur deux relie les deux faces : suffit a donner le volume.
+  FOR i&=0 TO 6 STEP 2
+    LINE n3px&(i&),n3py&(i&),n3px&(ADD(i&,8)),n3py&(ADD(i&,8))
+  NEXT i&
+  n3.ang&=AND(SUCC(n3.ang&),63) ! 64 pas, un tour en 1,3 s a 50 Hz
 RETURN
 .
 ' !>
