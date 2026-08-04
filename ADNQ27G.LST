@@ -438,17 +438,20 @@ PROCEDURE fx.step
   NEXT i&
   DEC fx.delai&
   IF fx.delai&<1
-    fx.delai&=40
+    fx.delai&=20 ! gerbe plus frequente mais deux fois plus petite
     fx.cx&=MUL(ADD(40,RANDOM(240)),16)
     fx.cy&=MUL(ADD(40,RANDOM(90)),16)
-    FOR i&=0 TO 31
-      ang&=i& ! un cran de la table par particule : 32 directions sur 2 tours
+    ' 16 particules par gerbe au lieu de 32 : l'initialisation, avec ses
+    ' RANDOM, tenait sur une seule trame et produisait un a-coup periodique.
+    FOR i&=fx.slot& TO fx.slot&+15
+      ang&=i&-fx.slot& ! rang dans la gerbe : les 16 crans de la table
       fx&(i&)=fx.cx&
       fy&(i&)=fx.cy&
       fvx&(i&)=MUL(sinus&(AND(ang&,15)),ADD(6,RANDOM(6)))
       fvy&(i&)=MUL(sinus&(AND(ADD(ang&,4),15)),ADD(6,RANDOM(6)))
       fvie&(i&)=ADD(24,RANDOM(16))
     NEXT i&
+    fx.slot&=32-fx.slot& ! alterner les deux moities du tableau
   ENDIF
   FOR i&=0 TO 63
     IF fvie&(i&)>0
@@ -491,9 +494,15 @@ PROCEDURE scroll.step
   ' decaler les deux tampons
   RC_COPY log%,2,192,318,8 TO log%,0,192
   RC_COPY phy%,2,192,318,8 TO phy%,0,192
+  ' Effacer la colonne entrante AVANT d'y dessiner. Sans cela l'espace, qui
+  ' porte l'indice 43 et n'est donc pas dessine, laissait passer l'ancien
+  ' contenu du bord droit : c'est la trainee observee. display.bitmap.txt n'a
+  ' pas ce probleme, son masque REPLACE effacant la cellule au prealable.
+  RC_COPY log%,318,192,2,8 TO log%,318,192,0
+  RC_COPY phy%,318,192,2,8 TO phy%,318,192,0
   ' tranche suivante du caractere courant
   pc&=PRED(INSTR(font.chars$,MID$(scroll$,SUCC(scroll.car&),1)))
-  IF pc&>=0 AND pc&<43 ! -1 = caractere hors police
+  IF pc&>=0 AND pc&<43 ! 43 = espace, deja efface ci-dessus
     RC_COPY font%,ADD(bitmap.char.x&(pc&),scroll.col&),bitmap.char.y&(pc&),2,8 TO log%,318,192
     RC_COPY font%,ADD(bitmap.char.x&(pc&),scroll.col&),bitmap.char.y&(pc&),2,8 TO phy%,318,192
   ENDIF
