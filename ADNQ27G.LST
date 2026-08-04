@@ -77,6 +77,7 @@ PROCEDURE hello
   NEXT file&
   ' tampon musique (tune%) ajoute ICI, apres sndhplay%/sp3%/font%, pour ne plus les chevaucher
   ADD total_size%,200000
+  ADD total_size%,66*160 ! fonte 16x22 du scrolltext d'intro
   .///////////////////////////////////
   .
   ' +256 : log% arrondit mem_block% vers le HAUT (video shifter), donc la derniere
@@ -118,7 +119,8 @@ PROCEDURE hello
   sndhplay%=log%+cumul_size%(0)         ! sndh player
   sp3%=log%+cumul_size%(1)              ! sp3 rout depacker
   font%=log%+cumul_size%(2)         ! 8x8x4c font 16*160
-  tune%=font%+16*160        ! buffer for current music (juste apres la fonte, 200000 octets reserves plus haut)
+  fnt2%=font%+16*160 ! fonte 16x22, 3 rangees de 22 lignes
+  tune%=fnt2%+66*160 ! buffer musique
   '
   '  ~GRAF_MOUSE(256,0) ! =OUT 4,18 hide mouse (hidem don't work with patched libs)
   OUT 4,18
@@ -223,11 +225,8 @@ RETURN
 .
 ' !>
 PROCEDURE intro_quizz
-  display.bitmap.txt("BIENVENUE AU QUIZZ MUSICAL ADN 2026",20,10,TRUE,TRUE,FALSE)
-  display.bitmap.txt("PRET A DEVINER ?",64,135,TRUE,TRUE,FALSE)
-  display.bitmap.txt("OUVREZ GRAND VOS OREILLES !",80,150,TRUE,TRUE,FALSE)
-  display.bitmap.txt("C EST PARTI !",10,165,TRUE,TRUE,FALSE)
-  display.bitmap.txt("APPUYER SUR ESPACE",165,165,TRUE,TRUE,FALSE)
+  ' Les textes fixes sont remplaces par le scrolltext 16x22 du bas d'ecran.
+  @scroll2.init
 RETURN
 .
 ' !>
@@ -244,6 +243,7 @@ PROCEDURE quizz
   REPEAT
     matouche&=BYTE{&HFFFC02}
     @vumetre
+    @scroll2.step
     stab
   UNTIL matouche&=&H39 ! IF SPACE PRESSED
   @wait.release
@@ -318,6 +318,52 @@ PROCEDURE quizz
   ' display.bitmap.txt("ET BRAVO",20,65,TRUE,TRUE,FALSE)
   ' display.bitmap.txt("POUR LES REPONSES TROUVEES !",60,75,TRUE,TRUE,FALSE)
   @finale
+RETURN
+.
+' !>
+PROCEDURE scroll2.init
+  ' Scrolltext de l'ecran d'intro, fonte 16x22 sur 2 plans (4 couleurs).
+  ' Grille de 20 cellules par rangee, 3 rangees. Les points rouges qui
+  ' delimitent les cases occupent la PREMIERE ligne de chaque rangee : on copie
+  ' donc a partir de y+1 sur 21 lignes et ils disparaissent d'eux-memes.
+  ' A verifier si la fonte evolue : l'ordre des caracteres ci-dessous a ete
+  ' releve glyphe par glyphe sur 2P_16_22.PI1.
+  f2.chars$="ABCDEFGHIJKLMNOPQRST"
+  f2.chars$=f2.chars$+"UVWXYZ-!?,()'.:12345"
+  f2.chars$=f2.chars$+"67890"
+  s2$="   BIENVENUE AU QUIZZ MUSICAL ADN 2026   .   "
+  s2$=s2$+"PRET A DEVINER ?   OUVREZ GRAND VOS OREILLES !   .   "
+  s2$=s2$+"APPUYEZ SUR ESPACE POUR COMMENCER   .   "
+  s2.car&=0
+  s2.col&=0
+RETURN
+.
+' !>
+PROCEDURE scroll2.step
+  ' Meme principe que le scroll de fin : la bande est poussee de 2 pixels a
+  ' gauche, puis la tranche suivante du caractere courant entre par la droite.
+  ' Bande de 21 lignes en bas d'ecran, y 178 a 198.
+  LOCAL pc&,sx&,sy&
+  RC_COPY log%,2,178,318,21 TO log%,0,178
+  RC_COPY log%,318,178,2,21 TO log%,318,178,0
+  pc&=PRED(INSTR(f2.chars$,MID$(s2$,SUCC(s2.car&),1)))
+  IF pc&>=0
+    sy&=1
+    WHILE pc&>=20
+      SUB pc&,20
+      ADD sy&,22
+    WEND
+    sx&=ADD(SHL&(pc&,4),s2.col&)
+    RC_COPY fnt2%,sx&,sy&,2,21 TO log%,318,178
+  ENDIF
+  ADD s2.col&,2
+  IF s2.col&>=16
+    s2.col&=0
+    INC s2.car&
+    IF s2.car&>=LEN(s2$)
+      s2.car&=0
+    ENDIF
+  ENDIF
 RETURN
 .
 ' !>
@@ -1080,6 +1126,10 @@ PROCEDURE base_files_load
   BLOAD file_name$(1),sp3%
   BLOAD file_name$(2),font%
   BLOAD file_name$(3),tune%
+  ' Fonte 16x22 du scrolltext d'intro : le .PI1 est charge dans log%, encore
+  ' libre a ce stade, puis on ne garde que les 66 lignes utiles sans l'entete.
+  BLOAD "2P_16_22.PI1",log%
+  BMOVE log%+34,fnt2%,66*160
   ' Start pic load
   RESTORE intro_pic
   READ intro_pic_name$
