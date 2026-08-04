@@ -1,64 +1,102 @@
-# ADN QUIZZ 2026
-
-Quiz musical pour **Atari ST**, écrit en **GFA BASIC 3** et compilé en `.PRG`.
-
-Pour chacun des 30 morceaux :
-
-1. la musique seule (fichier `.SND`, format SNDH) ;
-2. l'image apparaît progressivement (pixellisation puis scrambling) ;
-3. le texte de la réponse s'affiche par-dessus — ligne 1 l'artiste, ligne 2 le titre.
-
-**Contraintes** : 320×200 en 16 couleurs indexées (basse résolution ST), machine
-peu puissante, mémoire limitée. Chaque image `.PI1` embarque **sa propre palette**.
-
-## Cycle de travail
-
 ```
-.LST  ──Merge──►  éditeur GFA  ──Save──►  .GFA  ──compil──►  .PRG  ──►  Steem SSE
+    _    ____  _   _    ___  _   _ ___ ________
+   / \  |  _ \| \ | |  / _ \| | | |_ _|__  /__ /
+  / _ \ | | | |  \| | | | | | | | || |  / /  / /
+ / ___ \| |_| | |\  | | |_| | |_| || | / /_ / /_
+/_/   \_\____/|_| \_|  \__\_\\___/|___/____|____|
+                                    A T A R I  S T
 ```
 
-Le `.LST` (ASCII) est **le seul fichier éditable directement**. Le `.GFA` est le
-format tokenisé natif, le `.PRG` l'exécutable. Après toute modification du `.LST`,
-il faut refaire le cycle complet : les trois fichiers ne sont plus cohérents entre eux.
+# ADN Quizz 2026
 
-| Élément | Emplacement |
-|---|---|
-| Éditeur / interpréteur / compilateur / linkeur GFA | `D:\0CODE\ATARI24\0GFA\2026\GFA36TTE\` (`menu.prg` bascule de l'un à l'autre) |
-| ROM TOS | `D:\0CODE\ATARI24\Steem.SSE.4.0.0.Win64\TOS162FR.img` (STE d'origine) |
-| Émulateur Steem SSE | `D:\0CODE\ATARI24\Steem.SSE.4.0.0.Win64\Steem64 4.exe` |
-| Émulateur Hatari | `D:\0CODE\ATARI24\hatari-2.6.1_windows64\hatari.exe` |
+Un blind test musical qui tourne sur **Atari ST**. En **GFA Basic 3**, parce que
+oui, on est en 2026 et je code encore en GFA. Assumé.
 
-## Versions
+Le principe : 30 morceaux. Pour chacun, la musique démarre sur un écran noir, puis
+l'image se dévoile tout doucement pendant deux minutes — de gros pavés baveux
+jusqu'au pixel près. Le temps de laisser les copains ramer. Quand ils sèchent (ou
+qu'ils ont trouvé), espace, et l'artiste + le titre s'affichent en ondulant sur
+l'image.
 
-Le projet avance par **fichiers suffixés**. Les versions récentes suivent la forme
-courte `ADNQ26<lettre>` (7 caractères), imposée par la règle **8.3** de GEMDOS —
-les anciennes portent encore la forme longue `ADNQU26<lettre>`.
-Un dépôt git est initialisé sur `main`.
+À la fin, feu d'artifice et scrolltext. Évidemment. On ne se refait pas.
 
-- **`ADNQ26WO.*`** — copie de référence **qui tourne** (identique à `ADNQU26P`, MD5 vérifié).
-  Ne jamais l'écraser : c'est le point de retour.
-- **`ADNQ26Q.*`** — **à tester maintenant** : correction des poids de plans de bits
-  et `test_color_contrast(2,…)`.
-- **`ADNQ26R.LST`** — **cycle suivant** : `Q` + correctif mémoire (double origine
-  des tampons). `.GFA` / `.PRG` restent à générer par le cycle de build.
+## Ce qu'il faut pour le faire tourner
 
-Les versions sont volontairement empilées une par cycle de test : si `Q` échoue,
-`R` est à rebaser sur ce qui tourne plutôt qu'à tester tel quel.
+- Un **Atari ST** (ou STE, c'est mieux, il y a le blitter)
+- Ou un émulateur : je bosse sous **Steem SSE**, ça marche aussi sous **Hatari**
+- TOS 1.62 — c'est celui de mon STE, les autres devraient passer
 
-## Documentation
+Balancez `ADNQ27G.PRG` et le dossier `DATA` sur une disquette (ou un dossier monté
+en disque dur), lancez, et voilà.
 
-| Fichier | Contenu |
-|---|---|
-| [`AGENTS.md`](AGENTS.md) | **À lire en premier par tout agent.** Méthode de travail et pièges vérifiés. |
-| [`CLAUDE.md`](CLAUDE.md) | Spécificités Claude Code (base documentaire interrogeable). |
-| [`STRUCT.md`](STRUCT.md) | Carte mémoire, organisation du code, fichiers de données. |
-| [`FEATURES.md`](FEATURES.md) | Fonctionnalités et leur état réel. |
-| [`continue.md`](continue.md) | Journal de la session de débogage du 2026-08-01 (historique détaillé). |
+Une seule touche : **espace**. Ça abrège l'effet en cours, ça affiche la réponse,
+ça passe au morceau suivant. Backspace pour revenir en arrière si vous avez la main
+lourde. À la fin, espace encore et on retourne au bureau GEM proprement — j'ai mis
+un moment à obtenir ça, d'ailleurs.
 
-## État actuel
+## Le contenu
 
-Le programme **fonctionne** dans sa version `ADNQ26WO` / `ADNQU26P`.
+Les musiques sont au format **SNDH**, jouées par une routine assembleur. Merci à
+**AD** et **DMA SC** pour les tracks du quizz, et à **JESS** pour l'intro.
 
-Le sujet ouvert est le **contraste du texte** : la fonte est monochrome (index 15)
-alors que chaque image a sa propre palette, d'où un texte parfois illisible.
-Voir `FEATURES.md` pour le détail et `AGENTS.md` §Pièges avant toute modification.
+Les images sont des `.PI1` en 320×200, 16 couleurs. Format STE (4096 couleurs, pas
+512 — j'ai perdu du temps là-dessus, la palette est encodée bizarrement sur STE).
+
+La fonte bitmap 8×8 est maison.
+
+## Sous le capot, pour les curieux
+
+Quelques trucs dont je suis assez content :
+
+**La révélation progressive** ne passe pas par le VDI. Je travaille directement sur
+les plans de bits : un masque, quelques décalages en `LONG`, et un `BMOVE` pour
+répliquer les lignes. L'ancienne version faisait 4500 `RC_COPY` par palier, autant
+dire qu'elle ramait. Là c'est 40 itérations par ligne et ça passe crème.
+
+**Quatre effets** alternent d'un morceau à l'autre : dézoom net, dézoom déformé
+(l'ancien, en `RC_COPY`, je l'ai gardé parce que son côté baveux a du charme),
+lignes mélangées, et blocs dispersés. Tous partagent la même interface de durée,
+donc c'est réglable d'une variable.
+
+**Le feu d'artifice** : quatre gerbes simultanées à des stades différents, 16
+particules chacune, positions en seizièmes de pixel pour que ça soit fluide sans
+toucher au flottant. Effacement ciblé pixel par pixel — pas de `CLS` bourrin.
+
+**Le VU-mètre** de l'écran d'intro lit les registres de volume du YM2149 via
+Giaccess. Trois barres, une par voie. J'avais écrit un truc similaire en 1993, ça
+fait plaisir de ressortir la recette.
+
+## Le cycle de build
+
+```
+.LST  --Merge-->  editeur GFA  --Save-->  .GFA  --compil-->  .PRG  -->  Steem
+```
+
+Le `.LST` c'est l'ASCII, le seul truc éditable au clavier PC. Le `.GFA` c'est le
+format tokenisé de l'éditeur, le `.PRG` l'exécutable. Si vous touchez au `.LST`,
+faut refaire tout le cycle, sinon les trois fichiers racontent des choses
+différentes et vous allez vous arracher les cheveux.
+
+Attention : GEMDOS, donc **noms de fichiers en 8.3**, et le `.LST` doit rester en
+**ASCII pur** — pas d'accents, l'éditeur ST n'aime pas ça du tout.
+
+## C'est fini ?
+
+Non. Il reste :
+
+- Un vrai pixel art pour l'écran d'intro (le mien est en cours, celui d'aujourd'hui
+  est une image digitalisée en attendant)
+- Un scrolltext sur l'intro aussi, avec une autre fonte
+- Un contour autour des lettres plutôt que le rectangle noir derrière — plus classe
+- Une note de musique en 3D fil de fer, parce que pourquoi pas
+
+## Crédits
+
+Code : **Hylst** (Geoffroy)
+Coup de main : **Tomchi**
+Musiques : **AD**, **DMA SC**, **JESS**
+Fonte : Hylst
+
+---
+
+*Fait avec amour et beaucoup de `BMOVE` sur une machine de 1985.*
