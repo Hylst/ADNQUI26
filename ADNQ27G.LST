@@ -155,6 +155,7 @@ PROCEDURE hello
   NEXT i&
   @pixinit
   pix.duree&=6000 ! duree de la revelation en trames : 6000 / 50 Hz = 120 s
+  fin.no&=0 ! transition de fin en cours, cf. @fin.rapide
   '
   ' ////////////////////////////////
   a|=BYTE{&HFF820D}
@@ -638,12 +639,20 @@ RETURN
 PROCEDURE finale
   ' Ecran de fin : feu d'artifice en boucle, credits en scrolltext sur les 8
   ' dernieres lignes. Espace sort et rend la main a bye, qui restaure le GEM.
-  scroll$="      C EST FINI !   BRAVO A CEUX QUI ONT TROUVE, "
-  scroll$=scroll$+"ET COURAGE AUX AUTRES.   .   "
-  scroll$=scroll$+"CODE : HYLST, AVEC UN COUP DE MAIN DE TOMCHI.   "
-  scroll$=scroll$+"MUSIQUES : AD ET DMA SC, INTRO PAR JESS.   FONTES : HYLST.   .   "
-  scroll$=scroll$+"ECRIT EN GFA BASIC 3 SUR UNE MACHINE DE 1985, "
-  scroll$=scroll$+"PARCE QU IL FAUT BIEN S OCCUPER.   .   "
+  ' La fonte 8x8 sait desormais faire - ' ( ), d'ou les apostrophes et les
+  ' parentheses. Pas d'accents en revanche, et majuscules seulement.
+  scroll$="      C'EST FINI !   BRAVO A CEUX QUI ONT TROUVE, "
+  scroll$=scroll$+"ET COURAGE AUX AUTRES.   -   "
+  scroll$=scroll$+"CE QUE VOUS VENEZ D'ENTENDRE N'EST PAS UN ENREGISTREMENT : "
+  scroll$=scroll$+"CHAQUE GENERIQUE A ETE REPRIS NOTE A NOTE ET REECRIT "
+  scroll$=scroll$+"POUR LE SOUNDCHIP YM2149 DE NOS BONS VIEUX ATARI ST, "
+  scroll$=scroll$+"PAR AD ET DMA SC.   "
+  scroll$=scroll$+"TROIS VOIES, UN GENERATEUR DE BRUIT (ET BEAUCOUP DE PATIENCE).   -   "
+  scroll$=scroll$+"CODE ET FONTES : HYLST, AVEC UN COUP DE MAIN DE TOMCHI.   "
+  scroll$=scroll$+"MUSIQUE D'INTRO : JESS.   -   "
+  scroll$=scroll$+"GREETINGS A JBFOU ET DIANE, QUI FONT TOURNER L'ADN PARTY "
+  scroll$=scroll$+"A TANTONVILLE, ET A TOUS LES JOYEUX ATARISTES BOUT-EN-TRAIN "
+  scroll$=scroll$+"QUI ONT REPONDU PRESENT.   -   "
   scroll$=scroll$+"ESPACE POUR RENDRE LA MAIN AU BUREAU.      "
   ' Palette propre au feu d'artifice. @clearpal a mis tous les registres a
   ' zero et le seul XBIOS(6) qui les restaurait etait dans screen.opening,
@@ -1093,7 +1102,7 @@ PROCEDURE pixelisation(duree&)
   NEXT niv&
   ' espace : on n'affiche pas l'image d'un coup, on la revele en dissolve
   IF pixl_exit&=1
-    @dissolve.to.pic(100) ! 100 trames = 2 s
+    @fin.rapide(100) ! 100 trames = 2 s
   ELSE
     BMOVE pic%,phy%,32000
     BMOVE pic%,log%,32000
@@ -1143,7 +1152,7 @@ PROCEDURE dezoom.rc(duree&)
     EXIT IF pixl_exit&=1
   NEXT cycle&
   IF pixl_exit&=1
-    @dissolve.to.pic(100)
+    @fin.rapide(100)
   ELSE
     BMOVE pic%,phy%,32000
     BMOVE pic%,log%,32000
@@ -1153,10 +1162,123 @@ rc.niveaux:
 RETURN
 .
 ' !>
+PROCEDURE fin.rapide(trames&)
+  ' Transition de fin, appelee quand un effet lent est abrege. L'image nette
+  ' ne doit jamais surgir d'un coup, mais on ne fait plus attendre : deux
+  ' secondes environ. Quatre transitions en alternance.
+  ' Compteur separe de MOD(file&,4) qui choisit l'effet lent : un morceau
+  ' devine tout de suite et un morceau ecoute jusqu'au bout ne consomment pas
+  ' le meme nombre de tours, les deux suites se decalent d'elles-memes.
+  ' Aucune n'est interruptible : on est deja dans le chemin d'abandon, et
+  ' pixl_exit& vaut 1, donc @pixhold rendrait la main aussitot. VSYNC direct.
+  SELECT AND(fin.no&,3)
+  CASE 0
+    @dissolve.to.pic(trames&)
+  CASE 1
+    @volet.store(trames&)
+  CASE 2
+    @volet.biais(trames&)
+  CASE 3
+    @volet.centre(trames&)
+  ENDSELECT
+  fin.no&=AND(SUCC(fin.no&),3)
+RETURN
+.
+' !>
+PROCEDURE volet.store(trames&)
+  ' Store venitien : une ligne sur 16, puis sur 8, sur 4, sur 2, puis toutes.
+  ' L'image se densifie au lieu d'apparaitre par morceaux. Les lignes deja
+  ' posees sont recopiees a la passe suivante, ca ne coute qu'un BMOVE de plus
+  ' et ca evite de tenir une liste.
+  LOCAL s&,i&,t&,k&
+  t&=DIV(trames&,5)
+  IF t&<1
+    t&=1
+  ENDIF
+  s&=16
+  WHILE s&>=1
+    FOR i&=0 TO 199 STEP s&
+      BMOVE pic%+t160&(i&),phy%+t160&(i&),160
+    NEXT i&
+    FOR k&=1 TO t&
+      VSYNC
+    NEXT k&
+    s&=SHR&(s&,1)
+  WEND
+  BMOVE pic%,phy%,32000
+  BMOVE pic%,log%,32000
+RETURN
+.
+' !>
+PROCEDURE volet.biais(trames&)
+  ' Front diagonal : la droite x+y=t& balaie l'ecran du coin haut gauche au
+  ' coin bas droit, ce qui donne une lumiere rasante. lignes&() retient pour
+  ' chaque ligne le dernier groupe de 16 pixels recopie, on ne transporte donc
+  ' que la nouveaute - environ 60 BMOVE de 8 octets par trame.
+  ' 520 = 319+199 arrondi, la course complete du front.
+  LOCAL i&,t&,pas&,g&,gt&,d&
+  FOR i&=0 TO 199
+    lignes&(i&)=-1
+  NEXT i&
+  pas&=DIV(520,trames&)
+  IF pas&<1
+    pas&=1
+  ENDIF
+  t&=0
+  WHILE t&<520
+    VSYNC
+    FOR i&=0 TO 199
+      d&=SUB(t&,i&)
+      IF d&>=0 ! SHR& sur un positif, le front n'a pas encore atteint la ligne
+        gt&=SHR&(d&,4)
+        IF gt&>19
+          gt&=19
+        ENDIF
+        g&=lignes&(i&)
+        WHILE g&<gt&
+          INC g&
+          BMOVE pic%+t160&(i&)+SHL&(g&,3),phy%+t160&(i&)+SHL&(g&,3),8
+        WEND
+        lignes&(i&)=gt&
+      ENDIF
+    NEXT i&
+    ADD t&,pas&
+  WEND
+  BMOVE pic%,phy%,32000
+  BMOVE pic%,log%,32000
+RETURN
+.
+' !>
+PROCEDURE volet.centre(trames&)
+  ' Deux volets partent du milieu et s'ecartent vers le haut et vers le bas.
+  ' Deux BMOVE de ligne par cran : la moins chere des quatre.
+  LOCAL h&,n&,pas&,k&
+  pas&=DIV(100,trames&)
+  IF pas&<1
+    pas&=1
+  ENDIF
+  h&=0
+  WHILE h&<100
+    VSYNC
+    FOR k&=1 TO pas&
+      IF h&<100
+        n&=SUB(99,h&)
+        BMOVE pic%+t160&(n&),phy%+t160&(n&),160
+        n&=ADD(100,h&)
+        BMOVE pic%+t160&(n&),phy%+t160&(n&),160
+        INC h&
+      ENDIF
+    NEXT k&
+  WEND
+  BMOVE pic%,phy%,32000
+  BMOVE pic%,log%,32000
+RETURN
+.
+' !>
 PROCEDURE dissolve.to.pic(trames&)
   ' Devoile pic% ligne par ligne en ordre aleatoire, en trames& trames.
-  ' Fin commune a tous les effets : l'espace n'affiche jamais l'image d'un
-  ' coup. Sert surtout aux effets lents qu'on ne peut pas accelerer.
+  ' La premiere des quatre transitions de @fin.rapide, et la seule appelable
+  ' seule si un effet a besoin de cette fin precise.
   LOCAL i&,r&,temp&,k&,parlot&,n&
   FOR i&=0 TO 199
     lignes&(i&)=i&
@@ -1974,7 +2096,7 @@ PROCEDURE scrambling(duree&)
     EXIT IF pixl_exit&=1
   NEXT cycle&
   IF pixl_exit&=1
-    @dissolve.to.pic(100) ! 100 trames = 2 s
+    @fin.rapide(100) ! 100 trames = 2 s
   ELSE
     BMOVE pic%,phy%,32000
     BMOVE pic%,log%,32000
@@ -2019,7 +2141,7 @@ PROCEDURE random_pixels(duree&)
     EXIT IF pixl_exit&=1
   NEXT i&
   IF pixl_exit&=1
-    @dissolve.to.pic(100)
+    @fin.rapide(100)
   ELSE
     BMOVE pic%,phy%,32000
     BMOVE pic%,log%,32000
