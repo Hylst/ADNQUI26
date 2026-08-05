@@ -218,16 +218,8 @@ RETURN
 ' !>
 PROCEDURE intro_quizz
   ' Les textes fixes sont remplaces par le scrolltext 16x22 du bas d'ecran.
-  ' Les trois gris de la fonte vont dans les registres 1, 8 et 13, les moins
-  ' charges de l'image d'intro (cf. @base_files_load). Ecrits aussi dans pal%
-  ' pour survivre a un XBIOS(6). Le 1 et le 8 servent en plus a la trainee de
-  ' la croche, qui a besoin de deux gris sombres.
-  CARD{pal%+2}=&H222
-  CARD{pal%+16}=&H444
-  CARD{pal%+26}=&HDDD
-  CARD{&HFFFF8240+2}=&H222
-  CARD{&HFFFF8240+16}=&H444
-  CARD{&HFFFF8240+26}=&HDDD
+  ' Plus aucun registre force ici : la fonte 16x22 est peinte dans la palette
+  ' de l'image d'intro, on n'y touche pas.
   @scroll2.init
   @note3d.init
 RETURN
@@ -441,9 +433,10 @@ PROCEDURE note3d.init
   n3.fz&=0
   ' Trainee : n3.tr& poses precedentes redessinees derriere la croche, prises
   ' toutes les 2 trames dans l'anneau n3rx&/n3ry&. Rien n'est recalcule, ce sont
-  ' des points deja projetes ; seul le trace coute. Registres 8 et 1, les gris
-  ' moyen et sombre poses par @intro_quizz pour la fonte du scrolltext, ce qui
-  ' donne l'estompage sans mobiliser de couleur supplementaire.
+  ' des points deja projetes ; seul le trace coute. L'estompage prend deux
+  ' registres de la rampe de la fonte 16x22 : le 9 puis le 5, de luminosites
+  ' 6,9 et 3,1 la ou l'encre de la croche est a 13,1. Rien n'est force dans la
+  ' palette, ce sont des couleurs de l'image.
   ' Mettre 0 si la trame ne tient plus, 3 si elle tient large.
   n3.tr&=2
   n3.rp&=0
@@ -554,9 +547,9 @@ PROCEDURE note3d.step
     FOR g&=1 TO n3.tr&
       r&=AND(ADD(n3.rp&,SUB(8,SHL&(g&,1))),7) ! +8-2g plutot que -2g, on reste positif
       IF g&=1
-        COLOR vdicol|(8) ! le gris moyen de la fonte du scrolltext
+        COLOR vdicol|(9) ! le clair de la rampe de la fonte 16x22
       ELSE
-        COLOR vdicol|(1) ! le gris sombre
+        COLOR vdicol|(5) ! le sombre
       ENDIF
       FOR i&=0 TO 7
         n3ax&(i&)=n3rx&(r&,i&)
@@ -1402,28 +1395,18 @@ PROCEDURE base_files_load
   BLOAD file_name$(3),tune%
   ' Fonte 16x22 du scrolltext d'intro : le .PI1 est charge dans log%, encore
   ' libre a ce stade, puis on ne garde que les 66 lignes utiles sans l'entete.
-  BLOAD "2P_16_22.PI1",log%
+  BLOAD "DATA\2P_16_22.PI1",log%
   BMOVE log%+34,fnt2%,66*160
   ' Le sheet s'arrete au 9 : la 5e case de la 3e rangee, la ou @scroll2.step
   ' va chercher le zero, ne contient qu'une annotation du graphiste, d'ou le
   ' caractere brouille. On y recopie le O de la premiere rangee, les deux
   ' glyphes sont indiscernables dans cette fonte.
   RC_COPY fnt2%,224,0,16,22 TO fnt2%,64,44
-  ' La fonte tient sur 2 plans, couleurs 0 a 3, et voudrait sa propre palette.
-  ' Il faut donc lui preter trois registres de l'image d'intro. Les moins
-  ' charges sont le 1 (27 pixels), le 8 (58) et le 13 (94), soit 0,28 pour cent
-  ' de l'ecran ; les 13-14-15 d'avant en pesaient 9,22, le 15 servant a toute
-  ' la creme du logo. A revoir si l'image d'intro change encore.
-  ' Le remappage 1,2,3 -> 1,8,13 se fait en trois operations de mot : le plan 0
-  ' reste tel quel, le plan 1 est vide, le plan 2 recoit p0 ET p1, le plan 3
-  ' recoit p1. (1,0)->0001, (0,1)->1000, (1,1)->1101.
-  FOR fill%=fnt2% TO fnt2%+66*160-8 STEP 8
-    f0&=CARD{fill%}
-    f1&=CARD{fill%+2}
-    CARD{fill%+2}=0
-    CARD{fill%+4}=f0& AND f1&
-    CARD{fill%+6}=f1&
-  NEXT fill%
+  ' Aucun remappage de plans : le sheet est deja peint dans la palette de
+  ' l'image d'intro, sur les registres 5, 7 et 9 (du sombre au clair). Il a
+  ' tenu un temps sur 2 plans avec ses propres gris, ce qui obligeait a
+  ' sacrifier trois registres de l'image ; ce n'est plus le cas.
+  ' Corollaire : les deux .PI1 doivent garder la meme palette.
   ' Start pic load
   RESTORE intro_pic
   READ intro_pic_name$
