@@ -144,6 +144,7 @@ PROCEDURE hello
   DIM sinus&(15) ! table d'ondulation du texte, cf. @display.bitmap.txt
   DIM fx&(63),fy&(63),fvx&(63),fvy&(63),fvie&(63) ! particules du feu d'artifice
   DIM epx&(1,63),epy&(1,63) ! positions dessinees, une generation par tampon
+  DIM mrow$(3),pj$(3),pj.pt&(3) ! libelles du menu, noms et points des joueurs
   RESTORE sin.vague
   FOR i&=0 TO 15
     READ sinus&(i&)
@@ -223,6 +224,7 @@ PROCEDURE intro_quizz
   ' de l'image d'intro, on n'y touche pas.
   @scroll2.init
   @note3d.init
+  @menu.init
 RETURN
 .
 ' !>
@@ -236,13 +238,26 @@ PROCEDURE quizz
   ' 5) Modif fonte 8x8 en 1 plan avec outline
   '
   ' from quizz title quizz
+  ' $FFFC02 garde le dernier code recu : on n'agit que sur les CHANGEMENTS,
+  ' sinon une touche maintenue defilerait le menu a 50 crans par seconde.
+  ' Un appui produit deux changements, le code d'enfoncement puis celui de
+  ' relachement (bit 7 a 1), et seul le premier est transmis.
+  ' Espace ne sort plus directement : en sous-menu il ramene au menu, et
+  ' @menu.touche leve menu.go! seulement depuis le menu principal.
   REPEAT
     matouche&=BYTE{&HFFFC02}
+    IF matouche&<>menu.pk&
+      menu.pk&=matouche&
+      IF matouche&<128
+        @menu.touche(matouche&)
+      ENDIF
+    ENDIF
     @vumetre
     @scroll2.step
     @note3d.step
+    @menu.step
     stab
-  UNTIL matouche&=&H39 ! IF SPACE PRESSED
+  UNTIL menu.go!
   @wait.release
   FOR file&=0 TO nb_files_max&-1
     BMOVE log%,phy%,32000 ! copy log to phy
@@ -602,6 +617,316 @@ PROCEDURE note3d.step
   n3.fx&=AND(ADD(n3.fx&,2),255)
   n3.fy&=AND(ADD(n3.fy&,4),255)
   n3.fz&=AND(SUCC(n3.fz&),255)
+RETURN
+.
+' !>
+PROCEDURE menu.init
+  ' Menu du cadre en bas a gauche de l'image d'intro. L'interieur noir uni du
+  ' cadre va de x 3 a 66 et de y 125 a 167, mesure sur ADNQUIZZ.PI1.
+  ' Curseur : carre de 4 pixels en x 4-7. Libelles : 7 caracteres de la fonte
+  ' 8x8 a partir de x 10, soit jusqu'a x 65. Quatre lignes, y 128 a 158.
+  ' Le cadre etant noir uni, un PBOX en couleur 0 l'efface exactement : pas
+  ' besoin d'aller rechercher le fond dans pic%.
+  LOCAL i&
+  chif$="0123456789"
+  ' Table clavier du TOS : donne l'ASCII d'un code de touche sans supposer la
+  ' disposition du clavier (XBIOS 16, cf. gfaxpert). Sert a la saisie des noms.
+  keytbl%=LPEEK(XBIOS(16,L:-1,L:-1,L:-1))
+  menu.mode&=0 ! 0 menu, 1 jukebox, 2 choix du joueur, 3 saisie, 4 scores
+  menu.sel&=0
+  menu.go!=FALSE
+  jb.no&=0
+  sai$=""
+  FOR i&=0 TO 3
+    pj$(i&)=""
+    pj.pt&(i&)=0
+  NEXT i&
+  ' Etat clavier de depart : sans cela un code deja present serait pris pour
+  ' un appui des la premiere trame.
+  menu.pk&=BYTE{&HFFFC02}
+  @menu.rows
+  menu.rf&=2
+  menu.rc&=0
+RETURN
+.
+' !>
+PROCEDURE menu.d2(n&)
+  ' Deux chiffres dans d2$, pour 0 a 99. STR$ n'est pas utilise : selon les
+  ' versions il ajoute une espace en tete des nombres positifs.
+  d2$=MID$(chif$,SUCC(DIV(n&,10)),1)+MID$(chif$,SUCC(MOD(n&,10)),1)
+RETURN
+.
+' !>
+PROCEDURE menu.rows
+  ' Remplit les quatre libelles selon le mode. Sept caracteres au plus,
+  ' c'est la largeur utile du cadre.
+  LOCAL i&
+  SELECT menu.mode&
+  CASE 0
+    mrow$(0)="JOUEURS"
+    mrow$(1)="SCORES"
+    mrow$(2)="CREDITS"
+    mrow$(3)="JUKEBOX"
+  CASE 1
+    @menu.d2(SUCC(jb.no&))
+    mrow$(0)="JUKEBOX"
+    mrow$(1)="NO "+d2$
+    mrow$(2)=""
+    mrow$(3)="RETOUR"
+  CASE 2
+    FOR i&=0 TO 3
+      IF pj$(i&)=""
+        mrow$(i&)="- LIBRE"
+      ELSE
+        mrow$(i&)=pj$(i&)
+      ENDIF
+    NEXT i&
+  CASE 3
+    mrow$(0)="NOM :"
+    mrow$(1)=sai$+"-"
+    mrow$(2)=""
+    mrow$(3)="ENTREE"
+  CASE 4
+    FOR i&=0 TO 3
+      IF pj$(i&)=""
+        mrow$(i&)=""
+      ELSE
+        @menu.d2(pj.pt&(i&))
+        mrow$(i&)=pj$(i&)+" "+d2$
+      ENDIF
+    NEXT i&
+  ENDSELECT
+RETURN
+.
+' !>
+PROCEDURE menu.draw
+  ' Repeint tout le cadre dans le tampon de dessin courant.
+  LOCAL i&
+  DEFFILL vdicol|(0)
+  PBOX 3,125,66,167
+  FOR i&=0 TO 3
+    @menu.text(mrow$(i&),10,ADD(128,MUL(i&,10)))
+  NEXT i&
+  @menu.curseur
+RETURN
+.
+' !>
+PROCEDURE menu.curseur
+  ' Le curseur seul : on efface sa colonne au noir, on repose le carre.
+  ' Aucun libelle ne commence avant x 10, la colonne 4-8 leur est etrangere.
+  LOCAL y&
+  DEFFILL vdicol|(0)
+  PBOX 4,125,8,167
+  IF menu.mode&<>3 ! pas de curseur pendant la saisie
+    y&=ADD(128,MUL(menu.sel&,10))
+    DEFFILL vdicol|(ink_col&)
+    PBOX 4,ADD(y&,2),7,ADD(y&,5)
+  ENDIF
+RETURN
+.
+' !>
+PROCEDURE menu.text(t$,xb&,yb&)
+  ' Une ligne de fonte 8x8 a l'etat final du rideau, sans stab : le menu est
+  ' redessine dans la boucle d'intro, il ne peut pas basculer les tampons.
+  ' La garde sur la longueur n'est pas decorative : le FOR de GFA teste en
+  ' bas de boucle, donc FOR i&=1 TO 0 passe une fois. Sur une chaine vide on
+  ' irait chercher MID$(t$,1,1) et on poserait un glyphe parasite - les modes
+  ' jukebox et scores ont justement des lignes vides.
+  LOCAL i&,pc&,cx&
+  IF LEN(t$)>0
+    cx&=xb&
+    FOR i&=1 TO LEN(t$)
+      pc&=PRED(INSTR(font.chars$,MID$(t$,i&,1)))
+      IF pc&>=0 AND pc&<PRED(len.font&)
+        RC_COPY fmask%,56,0,8,8 TO log%,cx&,yb&
+        RC_COPY font%,bitmap.char.x&(pc&),bitmap.char.y&(pc&),8,8 TO log%,cx&,yb&,1
+      ENDIF
+      ADD cx&,8
+    NEXT i&
+  ENDIF
+RETURN
+.
+' !>
+PROCEDURE menu.step
+  ' Une trame. La plupart du temps il n'y a rien a faire : le cadre ne bouge
+  ' pas et vit deja dans les deux tampons. Apres un changement on redessine
+  ' deux trames de suite, une par tampon de stab.
+  IF menu.rf&>0
+    @menu.draw
+    DEC menu.rf&
+  ELSE
+    IF menu.rc&>0
+      @menu.curseur
+      DEC menu.rc&
+    ENDIF
+  ENDIF
+RETURN
+.
+' !>
+PROCEDURE menu.touche(code&)
+  ' Un appel par appui : l'appelant ne transmet que les changements de code,
+  ' et seulement les enfoncements (le relachement a le bit 7 a 1).
+  ' Codes releves dans gfaxpert : haut $48, bas $50, entree $1C, backspace
+  ' $0E, echap $01, espace $39.
+  IF code&=&H39 AND menu.mode&<>3
+    IF menu.mode&=0
+      menu.go!=TRUE
+    ELSE
+      @menu.mode(0)
+    ENDIF
+  ELSE
+    SELECT menu.mode&
+    CASE 0
+      @menu.deplacer(code&)
+      IF code&=&H1C
+        @menu.entrer
+      ENDIF
+    CASE 1
+      IF code&=&H48 AND jb.no&>0
+        DEC jb.no&
+        @menu.jouer
+      ENDIF
+      IF code&=&H50 AND jb.no&<PRED(nb_files_max&)
+        INC jb.no&
+        @menu.jouer
+      ENDIF
+      IF code&=&H1C OR code&=&H01
+        @menu.mode(0)
+      ENDIF
+    CASE 2
+      @menu.deplacer(code&)
+      IF code&=&H1C
+        sai$=""
+        @menu.mode(3)
+      ENDIF
+      IF code&=&H01
+        @menu.mode(0)
+      ENDIF
+    CASE 3
+      IF code&=&H1C
+        pj$(menu.sel&)=sai$
+        @menu.mode(2)
+      ELSE
+        IF code&=&H01
+          @menu.mode(2)
+        ELSE
+          IF code&=&HE
+            IF LEN(sai$)>0
+              sai$=LEFT$(sai$,PRED(LEN(sai$)))
+              @menu.rows
+              menu.rf&=2
+            ENDIF
+          ELSE
+            @menu.lettre(code&)
+          ENDIF
+        ENDIF
+      ENDIF
+    CASE 4
+      IF code&=&H1C OR code&=&H01
+        @menu.mode(0)
+      ENDIF
+    ENDSELECT
+  ENDIF
+RETURN
+.
+' !>
+PROCEDURE menu.deplacer(code&)
+  ' Haut et bas, avec bouclage. Les deux calculs restent positifs.
+  IF code&=&H48
+    menu.sel&=AND(ADD(menu.sel&,3),3)
+    menu.rc&=2
+  ENDIF
+  IF code&=&H50
+    menu.sel&=AND(SUCC(menu.sel&),3)
+    menu.rc&=2
+  ENDIF
+RETURN
+.
+' !>
+PROCEDURE menu.mode(m&)
+  ' Change de mode et demande un repeint complet du cadre.
+  menu.mode&=m&
+  IF m&=0
+    menu.sel&=0
+  ENDIF
+  @menu.rows
+  menu.rf&=2
+RETURN
+.
+' !>
+PROCEDURE menu.entrer
+  ' Validation depuis le menu principal.
+  SELECT menu.sel&
+  CASE 0
+    @menu.mode(2)
+  CASE 1
+    @menu.mode(4)
+  CASE 2
+    @menu.infos
+  CASE 3
+    @menu.mode(1)
+    @menu.jouer
+  ENDSELECT
+RETURN
+.
+' !>
+PROCEDURE menu.jouer
+  ' Charge et lance le morceau choisi. tune% est le tampon de la musique
+  ' d'intro : elle est perdue, mais @quizz recharge un morceau a chaque tour,
+  ' donc rien a remettre en place au demarrage du quizz.
+  @sndh.off
+  BLOAD sndh_fname$(jb.no&),tune%
+  @sndh(tune%)
+  @menu.rows
+  menu.rf&=2
+RETURN
+.
+' !>
+PROCEDURE menu.lettre(code&)
+  ' Traduit un code de touche en majuscule par la table clavier du TOS, donc
+  ' sans supposer la disposition. Lettres seules : la fonte 8x8 n'a pas de
+  ' minuscules, et les chiffres demandent Shift sur un clavier francais.
+  ' Quatre caracteres, comme les tables de scores d'arcade - c'est aussi ce
+  ' qui tient a cote des points dans un libelle de sept.
+  LOCAL a&
+  IF keytbl%>0 AND LEN(sai$)<4
+    a&=BYTE{keytbl%+code&}
+    IF a&>=97 AND a&<=122
+      SUB a&,32
+    ENDIF
+    IF a&>=65 AND a&<=90
+      sai$=sai$+CHR$(a&)
+      @menu.rows
+      menu.rf&=2
+    ENDIF
+  ENDIF
+RETURN
+.
+' !>
+PROCEDURE menu.infos
+  ' Page plein ecran : commandes et credits. @display.bitmap.txt fait son
+  ' propre stab, elle ne peut pas etre appelee depuis la boucle d'intro -
+  ' d'ou une page a part, qui rend la main sur espace.
+  RC_COPY log%,0,0,320,200 TO log%,0,0,0
+  RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
+  display.bitmap.txt("ADN QUIZZ 2026",0,16,TRUE,FALSE,TRUE)
+  display.bitmap.txt("COMMANDES",0,42,TRUE,FALSE,TRUE)
+  display.bitmap.txt("ESPACE : DEMARRER, ABREGER, SUITE",0,58,TRUE,FALSE,TRUE)
+  display.bitmap.txt("FLECHES : NAVIGUER DANS LE MENU",0,68,TRUE,FALSE,TRUE)
+  display.bitmap.txt("ENTREE : VALIDER",0,78,TRUE,FALSE,TRUE)
+  display.bitmap.txt("BACKSPACE : MORCEAU PRECEDENT",0,88,TRUE,FALSE,TRUE)
+  display.bitmap.txt("CREDITS",0,114,TRUE,FALSE,TRUE)
+  display.bitmap.txt("CODE ET FONTES : HYLST",0,130,TRUE,FALSE,TRUE)
+  display.bitmap.txt("MUSIQUES : AD ET DMA SC",0,140,TRUE,FALSE,TRUE)
+  display.bitmap.txt("INTRO : JESS",0,150,TRUE,FALSE,TRUE)
+  display.bitmap.txt("ESPACE POUR REVENIR",0,176,TRUE,FALSE,TRUE)
+  ' Les deux tampons ont des etats de rideau differents apres les stab.
+  BMOVE log%,phy%,32000
+  @wait_key(&H39)
+  BMOVE pic%,log%,32000
+  BMOVE pic%,phy%,32000
+  menu.pk&=BYTE{&HFFFC02}
+  @menu.mode(0)
 RETURN
 .
 ' !>
@@ -1338,7 +1663,7 @@ PROCEDURE txt.ligne(t$,yb&,freq&,dph&)
   ac&=freq& ! avance par addition plutot que MUL(c&,freq&)
   FOR c&=1 TO SUCC(nc&)
     pc&=PRED(INSTR(font.chars$,MID$(t$,c&,1)))
-    IF pc&>=0 AND pc&<43 ! -1 = caractere hors police
+    IF pc&>=0 AND pc&<PRED(len.font&) ! -1 = hors police, dernier = espace
       yv&=yb&+sinus&(AND(ADD(ac&,ADD(txt.phase&,dph&)),15))
       RC_COPY fmask%,56,0,8,8 TO log%,px&,yv&
       RC_COPY font%,bitmap.char.x&(pc&),bitmap.char.y&(pc&),char.width&,char.height& TO log%,px&,yv&,1
