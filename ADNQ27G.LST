@@ -218,14 +218,16 @@ RETURN
 ' !>
 PROCEDURE intro_quizz
   ' Les textes fixes sont remplaces par le scrolltext 16x22 du bas d'ecran.
-  ' Les gris de la fonte vont dans les registres 13 a 15, ecrits aussi dans
-  ' pal% pour survivre a un XBIOS(6).
-  CARD{pal%+26}=&H222
-  CARD{pal%+28}=&H444
-  CARD{pal%+30}=&HDDD
-  CARD{&HFFFF8240+26}=&H222
-  CARD{&HFFFF8240+28}=&H444
-  CARD{&HFFFF8240+30}=&HDDD
+  ' Les trois gris de la fonte vont dans les registres 1, 8 et 13, les moins
+  ' charges de l'image d'intro (cf. @base_files_load). Ecrits aussi dans pal%
+  ' pour survivre a un XBIOS(6). Le 1 et le 8 servent en plus a la trainee de
+  ' la croche, qui a besoin de deux gris sombres.
+  CARD{pal%+2}=&H222
+  CARD{pal%+16}=&H444
+  CARD{pal%+26}=&HDDD
+  CARD{&HFFFF8240+2}=&H222
+  CARD{&HFFFF8240+16}=&H444
+  CARD{&HFFFF8240+26}=&HDDD
   @scroll2.init
   @note3d.init
 RETURN
@@ -428,8 +430,8 @@ PROCEDURE note3d.init
   FOR i&=0 TO 4
     READ n3tx&(i&),n3ty&(i&)
   NEXT i&
-  n3.cx&=56
-  n3.cy&=60
+  n3.cx&=40
+  n3.cy&=40
   n3.ep&=6 ! demi-epaisseur de la tete
   ' Trois angles sur 256 pas. Y avance de 4, X de 2, Z de 1 : un tour en 1,3 s,
   ' 2,6 s et 5,1 s. Les trois periodes ne retombent jamais ensemble sur une
@@ -439,9 +441,9 @@ PROCEDURE note3d.init
   n3.fz&=0
   ' Trainee : n3.tr& poses precedentes redessinees derriere la croche, prises
   ' toutes les 2 trames dans l'anneau n3rx&/n3ry&. Rien n'est recalcule, ce sont
-  ' des points deja projetes ; seul le trace coute. Registres 13 et 14, les gris
-  ' sombres poses par @intro_quizz pour la fonte du scrolltext, ce qui donne
-  ' l'estompage sans mobiliser de couleur supplementaire.
+  ' des points deja projetes ; seul le trace coute. Registres 8 et 1, les gris
+  ' moyen et sombre poses par @intro_quizz pour la fonte du scrolltext, ce qui
+  ' donne l'estompage sans mobiliser de couleur supplementaire.
   ' Mettre 0 si la trame ne tient plus, 3 si elle tient large.
   n3.tr&=2
   n3.rp&=0
@@ -453,12 +455,15 @@ PROCEDURE note3d.init
   NEXT i&
   ' Boite restauree a chaque trame, calee sur 16 pixels. Sur toutes les
   ' orientations le dessin s'ecarte du centre de -40 a +38 dans les deux sens,
-  ' soit x 16-94 et y 20-98 : la boite prend x 16-95, 40 octets a partir du 8e.
-  ' Elle evite le VU-metre (x>=304, y<=19) et le scrolltext (y>=178).
-  n3.ob&=8
+  ' soit x et y de 0 a 78 : la boite prend le coin haut gauche, x 0-79 sur
+  ' 40 octets et 79 lignes. 40,40 est le centre le plus proche de l'origine
+  ' sans rognage - descendre a 36 ferait mordre 4 pixels sur le bord gauche
+  ' dans les poses extremes (le CLIP les couperait proprement, mais quand meme).
+  ' La boite evite le VU-metre (x 272-303, y 94-109) et le scrolltext (y>=178).
+  n3.ob&=0
   n3.lg&=40
-  n3.y1&=20
-  n3.y2&=98
+  n3.y1&=0
+  n3.y2&=78
 note3d.modele:
 ' Croche, +y vers le BAS. D'abord la tete, octogone de rayons 14 x 10 incline
 ' de 20 degres, puis la tige et le crochet dans l'ordre du trace.
@@ -549,9 +554,9 @@ PROCEDURE note3d.step
     FOR g&=1 TO n3.tr&
       r&=AND(ADD(n3.rp&,SUB(8,SHL&(g&,1))),7) ! +8-2g plutot que -2g, on reste positif
       IF g&=1
-        COLOR vdicol|(14)
+        COLOR vdicol|(8) ! le gris moyen de la fonte du scrolltext
       ELSE
-        COLOR vdicol|(13)
+        COLOR vdicol|(1) ! le gris sombre
       ENDIF
       FOR i&=0 TO 7
         n3ax&(i&)=n3rx&(r&,i&)
@@ -607,18 +612,21 @@ RETURN
 .
 ' !>
 PROCEDURE vumetre
-  ' Trois barres de 4 pixels, 1 d'ecart, collees a droite : 306-309, 311-314,
-  ' 316-319. Zone restauree 304-319, alignee sur 16, un BMOVE de 8 octets par
-  ' ligne. Dessin dans log% puis stab : a y=4 le faisceau arrive trop vite.
+  ' Trois barres de 4 pixels, 1 d'ecart : 280-283, 285-288, 290-293, base a
+  ' y=109. Posees au fond de l'ecran du moniteur de l'image d'intro, dont
+  ' l'interieur noir mesure x 262-309 et y 74-112. Zone restauree x 272-303,
+  ' calee sur 16, deux groupes soit 16 octets par ligne a partir du 136e.
+  ' Dessin dans log% puis stab : a y=4 le faisceau arrivait trop vite, ce n'est
+  ' plus un souci a cette hauteur mais le principe reste le meme.
   ' XBIOS(28,0,reg) = Giaccess. 8 = voie A, 9 = B, 10 = C, bits 3-0 = niveau.
   ' Bit 4 a 1 = volume pilote par l'enveloppe, on affiche le maximum.
   LOCAL v&,c&,h&,yl&,bx&
-  FOR yl&=4 TO 19
-    BMOVE pic%+t160&(yl&)+152,log%+t160&(yl&)+152,8
+  FOR yl&=94 TO 109
+    BMOVE pic%+t160&(yl&)+136,log%+t160&(yl&)+136,16
   NEXT yl&
   COLOR vdicol|(ink_col&)
   DEFFILL vdicol|(ink_col&)
-  bx&=306
+  bx&=280
   FOR c&=0 TO 2
     v&=XBIOS(28,0,ADD(8,c&))
     IF (v& AND 16)
@@ -627,7 +635,7 @@ PROCEDURE vumetre
       h&=v& AND 15
     ENDIF
     IF h&>0
-      PBOX bx&,20-h&,bx&+3,19
+      PBOX bx&,110-h&,bx&+3,109
     ENDIF
     ADD bx&,5 ! avance par addition plutot que MUL(c&,5)
   NEXT c&
@@ -802,7 +810,7 @@ PROCEDURE scroll.step
   RC_COPY phy%,318,192,2,8 TO phy%,318,192,0
   ' tranche suivante du caractere courant
   pc&=PRED(INSTR(font.chars$,MID$(scroll$,SUCC(scroll.car&),1)))
-  IF pc&>=0 AND pc&<43 ! 43 = espace, deja efface ci-dessus
+  IF pc&>=0 AND pc&<PRED(len.font&) ! dernier indice = espace, deja efface ci-dessus
     RC_COPY font%,ADD(bitmap.char.x&(pc&),scroll.col&),bitmap.char.y&(pc&),2,8 TO log%,318,192
     RC_COPY font%,ADD(bitmap.char.x&(pc&),scroll.col&),bitmap.char.y&(pc&),2,8 TO phy%,318,192
   ENDIF
@@ -889,7 +897,7 @@ PROCEDURE display.bitmap.txt(text$,xb&,yb&,horizontal!,bg_erase!,center!)
       ELSE
         yv&=yb&+sinus&(AND(char&,15))
       ENDIF
-      IF pos.char&>=0 AND pos.char&<43 ! -1 = caractere hors police
+      IF pos.char&>=0 AND pos.char&<PRED(len.font&) ! -1 = hors police, dernier = espace
         IF horizontal!
           RC_COPY fmask%,m.appear&,0,8,8 TO log%,cx&,yv&
           RC_COPY font%,bitmap.char.x&(pos.char&),bitmap.char.y&(pos.char&),char.width&,char.height& TO log%,cx&,yv&,1
@@ -1349,7 +1357,9 @@ PROCEDURE prepfont(mono!)
   ' ADAPTATIVE PROCEDURE
   char.width&=8
   char.height&=8
-  font.chars$="!.,/0123456789:;?ABCDEFGHIJKLMNOPQRSTUVWXYZ "
+  ' 48 cellules de 8x8 sur 2 rangees de 40, la derniere vide. L'espace ferme
+  ' donc la liste : partout ailleurs le test est pos.char&<PRED(len.font&).
+  font.chars$="!.,/0123456789:;?ABCDEFGHIJKLMNOPQRSTUVWXYZ-'() "
   len.font&=LEN(font.chars$)
   IF mono!
     BMOVE font%,phy%,16*160
@@ -1400,15 +1410,19 @@ PROCEDURE base_files_load
   ' glyphes sont indiscernables dans cette fonte.
   RC_COPY fnt2%,224,0,16,22 TO fnt2%,64,44
   ' La fonte tient sur 2 plans, couleurs 0 a 3, et voudrait sa propre palette.
-  ' Or l'image d'intro occupe les index 1 a 3 sur pres de 40 pour cent de
-  ' l'ecran : les forcer la detruirait. On remappe donc la fonte vers 13, 14 et
-  ' 15, qui ne pesent que 0,07 pour cent de l'image.
-  ' Ces trois cibles ont toutes les bits 2 et 3 a 1, et gardent les bits 0 et 1
-  ' de la source : il suffit de recopier p0 OR p1 dans les plans 2 et 3.
+  ' Il faut donc lui preter trois registres de l'image d'intro. Les moins
+  ' charges sont le 1 (27 pixels), le 8 (58) et le 13 (94), soit 0,28 pour cent
+  ' de l'ecran ; les 13-14-15 d'avant en pesaient 9,22, le 15 servant a toute
+  ' la creme du logo. A revoir si l'image d'intro change encore.
+  ' Le remappage 1,2,3 -> 1,8,13 se fait en trois operations de mot : le plan 0
+  ' reste tel quel, le plan 1 est vide, le plan 2 recoit p0 ET p1, le plan 3
+  ' recoit p1. (1,0)->0001, (0,1)->1000, (1,1)->1101.
   FOR fill%=fnt2% TO fnt2%+66*160-8 STEP 8
-    o2&=CARD{fill%} OR CARD{fill%+2}
-    CARD{fill%+4}=o2&
-    CARD{fill%+6}=o2&
+    f0&=CARD{fill%}
+    f1&=CARD{fill%+2}
+    CARD{fill%+2}=0
+    CARD{fill%+4}=f0& AND f1&
+    CARD{fill%+6}=f1&
   NEXT fill%
   ' Start pic load
   RESTORE intro_pic
