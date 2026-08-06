@@ -146,6 +146,7 @@ PROCEDURE hello
   DIM fx&(63),fy&(63),fvx&(63),fvy&(63),fvie&(63) ! particules du feu d'artifice
   DIM epx&(1,63),epy&(1,63) ! positions dessinees, une generation par tampon
   DIM mrow$(3),pj$(9),pj.pt&(9) ! libelles du menu, dix joueurs et leurs points
+  DIM stx&(39),sty&(39),stv&(39),stm&(39) ! champ d'etoiles de la page des scores
   RESTORE sin.vague
   FOR i&=0 TO 15
     READ sinus&(i&)
@@ -1116,16 +1117,32 @@ RETURN
 .
 ' !>
 PROCEDURE page.scores
-  ' Points de la session, enregistres en sortant. Backspace remet les points
-  ' a zero sans toucher aux noms : sans ca, la deuxieme soiree commencerait
-  ' avec les scores de la premiere.
+  ' Page des scores, animee. Enregistree en sortant ; Backspace remet les
+  ' points a zero sans toucher aux noms, sinon la deuxieme soiree
+  ' commencerait avec les scores de la premiere.
+  '
+  ' L'astuce de la page : les etoiles vivent dans les plans 2 et 3, le texte
+  ' dans les plans 0 et 1. Une etoile qui passe sur une lettre ne peut donc
+  ' pas l'abimer, et il n'y a rien a redessiner - c'est ce qui rend
+  ' l'animation gratuite malgre l'ecran simple tampon.
+  ' La fonte est repeinte en couleur 3 le temps de la page, puis remise a
+  ' ink_col& en sortant. @recolor_font coute environ 5000 iterations, soit un
+  ' battement de cil a l'entree et un a la sortie.
   LOCAL k&,pk&,fini!
-  fini!=FALSE
+  @scores.fusion
+  recolor_font(3)
   @page.ouvrir
   @page.scliste
+  @stars.init
+  @scores.palfixe
+  sc.teinte&=0
+  fini!=FALSE
   pk&=BYTE{&HFFFC02}
   REPEAT
     VSYNC
+    @stars.step
+    sc.teinte&=AND(SUCC(sc.teinte&),255)
+    @scores.teinte
     k&=BYTE{&HFFFC02}
     IF k&<>pk&
       pk&=k&
@@ -1134,6 +1151,7 @@ PROCEDURE page.scores
         CASE &HE
           @scores.raz
           @page.scliste
+          @stars.init
         CASE &H39
           fini!=TRUE
         CASE &H01
@@ -1147,20 +1165,134 @@ PROCEDURE page.scores
     @page.ligne("ENREGISTREMENT IMPOSSIBLE",192,TRUE)
     @point.tenir(100)
   ENDIF
+  recolor_font(ink_col&)
+  ~XBIOS(6,L:pal%) ! la palette de l'image d'intro reprend ses droits
   @page.fermer
+RETURN
+.
+' !>
+PROCEDURE scores.fusion
+  ' Regroupe les doublons de nom : le premier emplacement garde tout, le
+  ' second est libere. C'est le cas du joueur inscrit deux fois, une fois par
+  ' la page des joueurs et une fois a la volee pendant le quizz.
+  ' On n'additionne PAS les points du fichier a ceux de la memoire pour un
+  ' meme nom : la memoire les contient deja, @scores.load les y a mis au
+  ' demarrage. Les additionner compterait deux fois.
+  LOCAL i&,j&
+  FOR i&=0 TO 8
+    IF pj$(i&)<>""
+      FOR j&=SUCC(i&) TO 9
+        IF pj$(j&)=pj$(i&)
+          ADD pj.pt&(i&),pj.pt&(j&)
+          IF pj.pt&(i&)>99
+            pj.pt&(i&)=99
+          ENDIF
+          pj$(j&)=""
+          pj.pt&(j&)=0
+        ENDIF
+      NEXT j&
+    ENDIF
+  NEXT i&
+RETURN
+.
+' !>
+PROCEDURE scores.palfixe
+  ' Registres fixes de la page : le noir et les trois profondeurs d'etoiles.
+  ' Les etoiles n'allument que les plans 2 et 3, elles valent donc 4, 8 ou 12
+  ' sur fond noir.
+  SETCOLOR 0,0,0,0
+  SETCOLOR 4,2,2,3
+  SETCOLOR 8,4,4,5
+  SETCOLOR 12,7,7,7
+RETURN
+.
+' !>
+PROCEDURE scores.teinte
+  ' Le texte respire, de l'ambre au blanc chaud. Les registres 7, 11 et 15
+  ' sont le texte AVEC une etoile derriere : ils prennent la meme couleur,
+  ' ce qui fait passer les lettres devant le champ d'etoiles.
+  ' La table sinus est celle de la croche, dimensionnee par @note3d.init qui
+  ' tourne avant tout menu.
+  LOCAL c&
+  c&=ADD(4,SHR&(ADD(n3sin&(sc.teinte&),128),6)) ! 4 a 7
+  SETCOLOR 3,7,c&,SHR&(c&,1)
+  SETCOLOR 7,7,c&,SHR&(c&,1)
+  SETCOLOR 11,7,c&,SHR&(c&,1)
+  SETCOLOR 15,7,c&,SHR&(c&,1)
+RETURN
+.
+' !>
+PROCEDURE stars.init
+  ' 40 etoiles sur trois couches. La couche donne a la fois la vitesse et les
+  ' bits de plan, donc la profondeur se lit sans test supplementaire.
+  LOCAL i&,c&
+  FOR i&=0 TO 39
+    stx&(i&)=RANDOM(320)
+    sty&(i&)=RANDOM(200)
+    c&=MOD(i&,3)
+    stv&(i&)=SUCC(c&)
+    IF c&=0
+      stm&(i&)=4
+    ELSE
+      IF c&=1
+        stm&(i&)=8
+      ELSE
+        stm&(i&)=12
+      ENDIF
+    ENDIF
+  NEXT i&
+RETURN
+.
+' !>
+PROCEDURE stars.step
+  ' Une trame : chaque etoile est effacee a son ancienne place puis reposee a
+  ' la nouvelle, uniquement dans les plans 2 et 3. Ecriture directe en
+  ' memoire, aucun appel VDI - c'est le meme motif d'adressage que
+  ' @recolor_font.
+  LOCAL i&,x&,y&,a%,m&,nm&
+  FOR i&=0 TO 39
+    x&=stx&(i&)
+    y&=sty&(i&)
+    a%=ADD(phy%,ADD(t160&(y&),SHL&(SHR&(x&,4),3)))
+    m&=SHL&(1,15-AND(x&,15))
+    nm&=NOT m&
+    IF stm&(i&) AND 4
+      CARD{a%+4}=CARD{a%+4} AND nm&
+    ENDIF
+    IF stm&(i&) AND 8
+      CARD{a%+6}=CARD{a%+6} AND nm&
+    ENDIF
+    SUB x&,stv&(i&)
+    IF x&<0
+      ADD x&,320
+      y&=RANDOM(200)
+      sty&(i&)=y&
+    ENDIF
+    stx&(i&)=x&
+    a%=ADD(phy%,ADD(t160&(y&),SHL&(SHR&(x&,4),3)))
+    m&=SHL&(1,15-AND(x&,15))
+    IF stm&(i&) AND 4
+      CARD{a%+4}=CARD{a%+4} OR m&
+    ENDIF
+    IF stm&(i&) AND 8
+      CARD{a%+6}=CARD{a%+6} OR m&
+    ENDIF
+  NEXT i&
 RETURN
 .
 ' !>
 PROCEDURE page.scliste
   ' Les dix lignes. Les noms sont completes a huit caracteres pour que la
   ' colonne des points reste alignee.
+  ' Les lignes sont tassees : apres une fusion de doublons il reste des trous
+  ' dans pj$(), on affiche donc a la suite plutot qu'a l'indice.
   LOCAL i&,n&,y&,p$
   RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
   @page.ligne("SCORES",12,TRUE)
   n&=0
   FOR i&=0 TO 9
     IF pj$(i&)<>""
-      y&=ADD(30,MUL(i&,13))
+      y&=ADD(30,MUL(n&,13))
       p$=pj$(i&)+"        "
       @menu.d2(pj.pt&(i&))
       @page.ligne(LEFT$(p$,8)+"   "+d2$,y&,FALSE)
