@@ -45,7 +45,7 @@ PROCEDURE hello
   ' reserve memory for double screen buffer, for void + current + save palette, 22 free lines for lowborder font mask, space for current pic 2 display
   ' NB: le tampon musique (200000) est ajoute plus bas, APRES le calcul des fichiers de base,
   ' pour que tune% ne chevauche plus sndhplay%/sp3%/font% (bug corrige : voir plus bas)
-  total_size%=32256+32+32+32+(22+8)*160+32034
+  total_size%=32256+32+32+32+(22+8)*160+32034+16*160
   .
   .///////////////////////////////////
   ' @calc_needed_memory(total_size%)
@@ -94,6 +94,7 @@ PROCEDURE hello
   lowborderm%=savpal%+32    ! 22 lignes lowborder or erase buffer
   fmask%=lowborderm%+22*160 ! 8 lines for mask for font display fx
   pic%=fmask%+8*160         ! buffer to load current picture 32000+34 (full pi1 - to remove once better load pi1 proc )
+  bandsav%=pic%+32034       ! 16 lignes, sauvegarde du bas d'ecran pour @point
   ' tune% n'est PLUS ici (pic%+32034) : cette adresse tombait exactement sur sndhplay%,
   ' donc chaque chargement de musique (jusqu'a 75Ko observes) ecrasait le lecteur sndh
   ' et la fonte. tune% est maintenant defini plus bas, juste apres font%.
@@ -645,6 +646,7 @@ PROCEDURE menu.init
   ' Etat clavier de depart : sans cela un code deja present serait pris pour
   ' un appui des la premiere trame.
   menu.pk&=BYTE{&HFFFC02}
+  pt.pk&=menu.pk& ! meme precaution pour les touches de fonction du quizz
   @menu.rows
   menu.rf&=2
   menu.rc&=0
@@ -666,7 +668,7 @@ PROCEDURE menu.rows
   CASE 0
     mrow$(0)="JOUEURS"
     mrow$(1)="SCORES"
-    mrow$(2)="CREDITS"
+    mrow$(2)="REGLES"
     mrow$(3)="JUKEBOX"
   CASE 1
     @menu.d2(SUCC(jb.no&))
@@ -808,7 +810,7 @@ PROCEDURE menu.entrer
   CASE 1
     @page.scores
   CASE 2
-    @page.infos
+    @page.regles
   CASE 3
     @menu.mode(1)
     @menu.jouer
@@ -859,43 +861,114 @@ PROCEDURE page.ligne(t$,y&,centre!)
 RETURN
 .
 ' !>
-PROCEDURE page.infos
-  ' Commandes et credits.
+PROCEDURE page.regles
+  ' Regles, controles et credits sur un seul ecran. Affichee au demarrage
+  ' entre l'accueil et le premier morceau, et rappelable par le menu.
+  ' Tout tient d'un coup et y reste : cette page est faite pour etre lue a
+  ' voix haute a ceux qui sont trop loin de l'ecran. Le scrolltext ne peut
+  ' pas jouer ce role, il se merite et se rate.
+  ' Une ligne = une phrase courte, 38 caracteres au plus.
   @page.ouvrir
-  @page.ligne("ADN QUIZZ 2026",16,TRUE)
-  @page.ligne("COMMANDES",44,TRUE)
-  @page.ligne("ESPACE : DEMARRER, ABREGER, SUITE",62,TRUE)
-  @page.ligne("FLECHES : NAVIGUER DANS LE MENU",74,TRUE)
-  @page.ligne("ENTREE : VALIDER",86,TRUE)
-  @page.ligne("BACKSPACE : MORCEAU PRECEDENT",98,TRUE)
-  @page.ligne("CREDITS",126,TRUE)
-  @page.ligne("CODE ET FONTES : HYLST",144,TRUE)
-  @page.ligne("MUSIQUES : AD ET DMA SC",156,TRUE)
-  @page.ligne("INTRO : JESS",168,TRUE)
-  @page.ligne("ESPACE POUR REVENIR",188,TRUE)
+  @page.ligne("ADN QUIZZ 2026",4,TRUE)
+  @page.ligne("REGLES",22,TRUE)
+  @page.ligne("LE PREMIER QUI DONNE LE TITRE",36,TRUE)
+  @page.ligne("DU MORCEAU MARQUE LE POINT",46,TRUE)
+  @page.ligne("L IMAGE EST UN INDICE, PAS LA REPONSE",56,TRUE)
+  @page.ligne("ARTISTE ET TITRE S AFFICHENT ENSUITE",66,TRUE)
+  @page.ligne("CONTROLES",84,TRUE)
+  @page.ligne("ESPACE : DEMARRER, ABREGER, SUITE",98,TRUE)
+  @page.ligne("BACKSPACE : MORCEAU PRECEDENT",108,TRUE)
+  @page.ligne("FLECHES ET ENTREE : MENU D ACCUEIL",118,TRUE)
+  @page.ligne("F1 A F8 : POINT AU JOUEUR 1 A 8",128,TRUE)
+  @page.ligne("CREDITS",146,TRUE)
+  @page.ligne("CODE ET FONTES : HYLST",160,TRUE)
+  @page.ligne("MUSIQUES YM2149 : AD ET DMA SC",170,TRUE)
+  @page.ligne("INTRO : JESS",180,TRUE)
+  @page.ligne("ESPACE POUR CONTINUER",192,TRUE)
   @wait_key(&H39)
   @page.fermer
 RETURN
 .
 ' !>
-PROCEDURE page.regles
-  ' Consignes du quizz, entre l'ecran d'accueil et le premier morceau.
-  ' Tout tient a l'ecran d'un coup, et y reste : cette page est faite pour
-  ' etre lue a voix haute a ceux qui sont trop loin de l'ecran. Le
-  ' scrolltext ne peut pas jouer ce role, il se merite et se rate.
-  ' Une ligne = une phrase courte, 38 caracteres au plus.
-  @page.ouvrir
-  @page.ligne("ADN QUIZZ 2026",16,TRUE)
-  @page.ligne("COMMENT ON JOUE",44,TRUE)
-  @page.ligne("UN MORCEAU DEMARRE",68,TRUE)
-  @page.ligne("UNE IMAGE SE DEVOILE PENDANT L ECOUTE",82,TRUE)
-  @page.ligne("ELLE EST UN INDICE, PAS LA REPONSE",96,TRUE)
-  @page.ligne("ON DEMANDE LE TITRE DU MORCEAU",118,TRUE)
-  @page.ligne("ET PAS LE NOM DE L ARTISTE",132,TRUE)
-  @page.ligne("ESPACE ABREGE ET DONNE LA REPONSE",154,TRUE)
-  @page.ligne("ESPACE POUR COMMENCER",188,TRUE)
-  @wait_key(&H39)
-  @page.fermer
+PROCEDURE point(i&)
+  ' Un point au joueur i& (0 a 7), depuis F1 a F8 pendant la revelation.
+  ' Si l'emplacement est libre on demande d'abord le nom : c'est le cas du
+  ' joueur qui trouve avant de s'etre inscrit.
+  ' Tout se passe dans les 16 dernieres lignes de l'ecran, sauvees puis
+  ' remises. Pas de page plein ecran ici : elle effacerait la revelation en
+  ' cours, et @page.fermer remettrait pic% - donc l'image entiere, soit la
+  ' reponse offerte.
+  ' Les effets de revelation tournent apres @dboff, phy% est donc a la fois
+  ' l'ecran affiche et celui qu'ils dessinent.
+  LOCAL ok!
+  BMOVE phy%+29440,bandsav%,2560 ! lignes 184 a 199
+  ok!=TRUE
+  IF pj$(i&)=""
+    @point.nom(i&)
+    ok!=(pj$(i&)<>"")
+  ENDIF
+  IF ok!
+    IF pj.pt&(i&)<99
+      INC pj.pt&(i&)
+    ENDIF
+    @menu.d2(pj.pt&(i&))
+    @point.bande(pj$(i&)+" : "+d2$)
+    @point.tenir(75) ! une seconde et demie
+  ENDIF
+  BMOVE bandsav%,phy%+29440,2560
+  pt.pk&=BYTE{&HFFFFC02}
+RETURN
+.
+' !>
+PROCEDURE point.bande(t$)
+  ' Efface la bande du bas et y ecrit une ligne centree.
+  RC_COPY phy%,0,184,320,16 TO phy%,0,184,0
+  @menu.text(t$,160-SHL&(LEN(t$),2),188,phy%)
+RETURN
+.
+' !>
+PROCEDURE point.tenir(n&)
+  ' Attente simple. La musique tourne sous interruption, elle continue.
+  LOCAL k&
+  FOR k&=1 TO n&
+    VSYNC
+  NEXT k&
+RETURN
+.
+' !>
+PROCEDURE point.nom(i&)
+  ' Saisie d'un nom sans quitter la revelation : uniquement dans la bande du
+  ' bas, que @point a sauvegardee. Entree valide, ESC renonce au point.
+  LOCAL k&,pk&,fini!,p$
+  sai$=""
+  fini!=FALSE
+  p$="JOUEUR "+MID$(chif$,ADD(i&,2),1)+" : "
+  @point.bande(p$+"-")
+  pk&=BYTE{&HFFFFC02}
+  REPEAT
+    VSYNC
+    k&=BYTE{&HFFFFC02}
+    IF k&<>pk&
+      pk&=k&
+      IF k&<128
+        SELECT k&
+        CASE &H1C
+          pj$(i&)=sai$
+          fini!=TRUE
+        CASE &H01
+          fini!=TRUE
+        CASE &HE
+          IF LEN(sai$)>0
+            sai$=LEFT$(sai$,PRED(LEN(sai$)))
+            @point.bande(p$+sai$+"-")
+          ENDIF
+        DEFAULT
+          @saisie.lettre(k&)
+          @point.bande(p$+sai$+"-")
+        ENDSELECT
+      ENDIF
+    ENDIF
+  UNTIL fini!
 RETURN
 .
 ' !>
@@ -988,7 +1061,8 @@ PROCEDURE page.saisie(s&)
             @page.nom
           ENDIF
         DEFAULT
-          @page.lettre(k&)
+          @saisie.lettre(k&)
+          @page.nom
         ENDSELECT
       ENDIF
     ENDIF
@@ -996,8 +1070,10 @@ PROCEDURE page.saisie(s&)
 RETURN
 .
 ' !>
-PROCEDURE page.lettre(code&)
-  ' Ajoute une lettre a sai$ si la touche en est une.
+PROCEDURE saisie.lettre(code&)
+  ' Ajoute une lettre a sai$ si la touche en est une. Le redessin est a la
+  ' charge de l'appelant : la saisie se fait tantot en plein ecran, tantot
+  ' dans une bande de 16 lignes pendant la revelation.
   LOCAL a&
   IF keytbl%>0 AND LEN(sai$)<8
     a&=BYTE{keytbl%+code&}
@@ -1006,7 +1082,6 @@ PROCEDURE page.lettre(code&)
     ENDIF
     IF a&>=65 AND a&<=90
       sai$=sai$+CHR$(a&)
-      @page.nom
     ENDIF
   ENDIF
 RETURN
@@ -1436,6 +1511,19 @@ PROCEDURE tatouche
   tatouche&=BYTE{&HFFFFC02}
   IF tatouche&=&H39
     pixl_exit&=1
+  ENDIF
+  ' Attribution d'un point pendant la revelation : F1 a F8 pour les huit
+  ' emplacements de joueur. gfaxpert donne F1=$3B et F10=$44, soit dix
+  ' touches pour dix codes consecutifs, donc F1 a F8 vont de $3B a $42.
+  ' Les chiffres auraient ete plus naturels mais leurs codes ne sont pas
+  ' dans le corpus, et sur un clavier francais ils demandent Shift.
+  ' Front montant seulement : $FFFC02 garde le dernier code, une touche
+  ' maintenue distribuerait un point a chaque appel.
+  IF tatouche&<>pt.pk&
+    pt.pk&=tatouche&
+    IF tatouche&>=&H3B AND tatouche&<=&H42
+      @point(SUB(tatouche&,&H3B))
+    ENDIF
   ENDIF
 RETURN
 '
