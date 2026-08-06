@@ -29,15 +29,23 @@ l'image.
 Balancez `ADNQ27G.PRG` et le dossier `DATA` sur une disquette (ou un dossier monté
 en disque dur), lancez, et voilà.
 
-Une seule touche : **espace**. Ça abrège l'effet en cours, ça affiche la réponse,
-ça passe au morceau suivant. Backspace pour revenir en arrière si vous avez la main
-lourde. À la fin, espace encore et on retourne au bureau GEM proprement — j'ai mis
-un moment à obtenir ça, d'ailleurs.
+L'essentiel se fait à l'**espace** : ça abrège l'effet en cours, ça affiche la
+réponse, ça passe au morceau suivant. Backspace pour revenir en arrière si vous
+avez la main lourde. À la fin, espace encore et on retourne au bureau GEM
+proprement — j'ai mis un moment à obtenir ça, d'ailleurs.
+
+Sur l'écran d'accueil, les **flèches** et **Entrée** ouvrent un petit menu : noter
+les joueurs, voir les scores, relire les règles, ou écouter les morceaux à la
+carte. Et pendant le quizz, **F1 à F8** donnent le point au joueur qui a trouvé.
+Si son nom n'est pas encore enregistré, on vous le demande sur le coup, sans
+interrompre le dévoilement de l'image.
 
 ## Le contenu
 
-Les musiques sont au format **SNDH**, jouées par une routine assembleur. Merci à
-**AD** et **DMA SC** pour les tracks du quizz, et à **JESS** pour l'intro.
+Les musiques sont au format **SNDH**, jouées par une routine assembleur. Ce ne
+sont pas des enregistrements : chaque générique a été repris note à note et
+réécrit pour le YM2149, trois voies et un générateur de bruit. Merci à **AD** et
+**DMA SC** pour ce boulot de fourmi, et à **JESS** pour l'intro.
 
 Les images sont des `.PI1` en 320×200, 16 couleurs. Format STE (4096 couleurs, pas
 512 — j'ai perdu du temps là-dessus, la palette est encodée bizarrement sur STE).
@@ -63,8 +71,21 @@ particules chacune, positions en seizièmes de pixel pour que ça soit fluide sa
 toucher au flottant. Effacement ciblé pixel par pixel — pas de `CLS` bourrin.
 
 **Le VU-mètre** de l'écran d'intro lit les registres de volume du YM2149 via
-Giaccess. Trois barres, une par voie. J'avais écrit un truc similaire en 1993, ça
-fait plaisir de ressortir la recette.
+Giaccess. Trois barres, une par voie, posées au fond de l'écran du moniteur qui
+est dessiné dans l'image. J'avais écrit un truc similaire en 1993, ça fait
+plaisir de ressortir la recette.
+
+**La croche en fil de fer** tourne sur trois axes avec une traînée. Matrice de
+rotation en virgule fixe sur 7 bits, calculée une fois par image ; les deux faces
+de la tête se déduisent l'une de l'autre par une translation, ce qui économise la
+moitié des sommets. Et la traînée ne coûte rien du tout : je garde les points
+déjà projetés des images précédentes dans un anneau, il n'y a plus qu'à les
+retracer.
+
+**Le scrolltext de l'intro** est monté dans une bande hors écran puis recopié
+d'un bloc à chaque image. Ça a l'air anodin ; c'est ce qui a réglé un
+clignotement carabiné, parce qu'avec le double écran un tampon sur deux ne
+recevait qu'une colonne sur deux.
 
 ## Le cycle de build
 
@@ -84,11 +105,11 @@ Attention : GEMDOS, donc **noms de fichiers en 8.3**, et le `.LST` doit rester e
 
 Non. Il reste :
 
-- Un vrai pixel art pour l'écran d'intro (le mien est en cours, celui d'aujourd'hui
-  est une image digitalisée en attendant)
-- Un scrolltext sur l'intro aussi, avec une autre fonte
-- Un contour autour des lettres plutôt que le rectangle noir derrière — plus classe
-- Une note de musique en 3D fil de fer, parce que pourquoi pas
+- Un compte à rebours du dévoilement, pour que la salle sache combien il reste
+- Une vraie pause, parce qu'en soirée il faut pouvoir arrêter net
+- Les scores qui survivent à l'extinction de la machine
+- Un écran récapitulatif à la fin, pour repasser sur les réponses
+- Et finir le pixel art de l'écran d'accueil, qui n'est pas tout à fait terminé
 
 ## Crédits
 
