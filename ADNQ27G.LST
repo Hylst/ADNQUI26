@@ -145,7 +145,7 @@ PROCEDURE hello
   DIM sinus&(15) ! table d'ondulation du texte, cf. @display.bitmap.txt
   DIM fx&(63),fy&(63),fvx&(63),fvy&(63),fvie&(63) ! particules du feu d'artifice
   DIM epx&(1,63),epy&(1,63) ! positions dessinees, une generation par tampon
-  DIM mrow$(3),pj$(7),pj.pt&(7) ! libelles du menu, huit joueurs et leurs points
+  DIM mrow$(3),pj$(9),pj.pt&(9) ! libelles du menu, dix joueurs et leurs points
   RESTORE sin.vague
   FOR i&=0 TO 15
     READ sinus&(i&)
@@ -315,6 +315,7 @@ PROCEDURE quizz
       ENDIF
     ENDIF
   NEXT file& ! next music to guess
+  @scores.save ! fin naturelle d'une session, on garde les points
   @sndh.off
   BLOAD "DATA\ATRISTST.SND",tune%
   @ldpic("DATA\FIREWORK.PI1",pic%,FALSE)
@@ -639,10 +640,11 @@ PROCEDURE menu.init
   menu.go!=FALSE
   jb.no&=0
   sai$=""
-  FOR i&=0 TO 7
+  FOR i&=0 TO 9
     pj$(i&)=""
     pj.pt&(i&)=0
   NEXT i&
+  @scores.load
   ' Etat clavier de depart : sans cela un code deja present serait pris pour
   ' un appui des la premiere trame.
   menu.pk&=BYTE{&HFFFC02}
@@ -879,7 +881,7 @@ PROCEDURE page.regles
   @page.ligne("ESPACE : DEMARRER, ABREGER, SUITE",84,TRUE)
   @page.ligne("BACKSPACE : MORCEAU PRECEDENT",94,TRUE)
   @page.ligne("FLECHES ET ENTREE : MENU D ACCUEIL",104,TRUE)
-  @page.ligne("F1 A F8 : POINT AU JOUEUR 1 A 8",114,TRUE)
+  @page.ligne("F1 A F10 : POINT AU JOUEUR 1 A 10",114,TRUE)
   @page.ligne("SI LE JOUEUR EST INCONNU, ON DEMANDE",124,TRUE)
   @page.ligne("SON NOM AVANT DE COMPTER LE POINT",134,TRUE)
   @page.ligne("CREDITS",149,TRUE)
@@ -893,7 +895,7 @@ RETURN
 .
 ' !>
 PROCEDURE point(i&)
-  ' Un point au joueur i& (0 a 7), depuis F1 a F8 pendant la revelation.
+  ' Un point au joueur i& (0 a 9), depuis F1 a F10 pendant la revelation.
   ' Si l'emplacement est libre on demande d'abord le nom : c'est le cas du
   ' joueur qui trouve avant de s'etre inscrit.
   ' Tout se passe dans les 16 dernieres lignes de l'ecran, sauvees puis
@@ -944,7 +946,8 @@ PROCEDURE point.nom(i&)
   LOCAL k&,pk&,fini!,p$
   sai$=""
   fini!=FALSE
-  p$="JOUEUR "+MID$(chif$,ADD(i&,2),1)+" : "
+  @menu.d2(SUCC(i&))
+  p$="JOUEUR "+d2$+" : "
   @point.bande(p$+"-")
   pk&=BYTE{&HFFFFC02}
   REPEAT
@@ -992,10 +995,18 @@ PROCEDURE page.joueurs
       IF k&<128
         SELECT k&
         CASE &H48
-          s&=AND(ADD(s&,7),7)
+          IF s&>0
+            DEC s&
+          ELSE
+            s&=9
+          ENDIF
           @page.pjliste(s&)
         CASE &H50
-          s&=AND(SUCC(s&),7)
+          IF s&<9
+            INC s&
+          ELSE
+            s&=0
+          ENDIF
           @page.pjliste(s&)
         CASE &H1C
           @page.saisie(s&)
@@ -1017,9 +1028,9 @@ PROCEDURE page.pjliste(s&)
   ' Les huit emplacements, curseur sur celui qui est choisi.
   LOCAL i&,y&
   RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
-  @page.ligne("JOUEURS",16,TRUE)
-  FOR i&=0 TO 7
-    y&=ADD(48,MUL(i&,14))
+  @page.ligne("JOUEURS",12,TRUE)
+  FOR i&=0 TO 9
+    y&=ADD(30,MUL(i&,13))
     @menu.d2(SUCC(i&))
     IF pj$(i&)=""
       @page.ligne(d2$+"  -",y&,FALSE)
@@ -1028,14 +1039,14 @@ PROCEDURE page.pjliste(s&)
     ENDIF
   NEXT i&
   DEFFILL vdicol|(ink_col&)
-  y&=ADD(50,MUL(s&,14))
+  y&=ADD(32,MUL(s&,13))
   PBOX 0,y&,4,ADD(y&,4)
   ' On rappelle ici a quoi servent ces noms : la page des joueurs est le seul
   ' endroit ou l'on vient avant la partie, c'est donc la qu'il faut le dire.
-  @page.ligne("PENDANT LE QUIZZ, F1 A F8 DONNENT",158,TRUE)
-  @page.ligne("UN POINT AU JOUEUR CORRESPONDANT",168,TRUE)
-  @page.ligne("FLECHES : CHOISIR   ENTREE : NOMMER",180,TRUE)
-  @page.ligne("ESPACE : REVENIR",190,TRUE)
+  @page.ligne("PENDANT LE QUIZZ, F1 A F10 DONNENT",162,TRUE)
+  @page.ligne("UN POINT AU JOUEUR CORRESPONDANT",172,TRUE)
+  @page.ligne("FLECHES : CHOISIR   ENTREE : NOMMER",182,TRUE)
+  @page.ligne("ESPACE : REVENIR",192,TRUE)
 RETURN
 .
 ' !>
@@ -1105,15 +1116,51 @@ RETURN
 .
 ' !>
 PROCEDURE page.scores
-  ' Points de la session. Les noms sont completes a huit caracteres pour que
-  ' la colonne des points reste alignee.
-  LOCAL i&,n&,y&,p$
+  ' Points de la session, enregistres en sortant. Backspace remet les points
+  ' a zero sans toucher aux noms : sans ca, la deuxieme soiree commencerait
+  ' avec les scores de la premiere.
+  LOCAL k&,pk&,fini!
+  fini!=FALSE
   @page.ouvrir
-  @page.ligne("SCORES",16,TRUE)
+  @page.scliste
+  pk&=BYTE{&HFFFC02}
+  REPEAT
+    VSYNC
+    k&=BYTE{&HFFFC02}
+    IF k&<>pk&
+      pk&=k&
+      IF k&<128
+        SELECT k&
+        CASE &HE
+          @scores.raz
+          @page.scliste
+        CASE &H39
+          fini!=TRUE
+        CASE &H01
+          fini!=TRUE
+        ENDSELECT
+      ENDIF
+    ENDIF
+  UNTIL fini!
+  @scores.save
+  IF sc.ko!
+    @page.ligne("ENREGISTREMENT IMPOSSIBLE",192,TRUE)
+    @point.tenir(100)
+  ENDIF
+  @page.fermer
+RETURN
+.
+' !>
+PROCEDURE page.scliste
+  ' Les dix lignes. Les noms sont completes a huit caracteres pour que la
+  ' colonne des points reste alignee.
+  LOCAL i&,n&,y&,p$
+  RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
+  @page.ligne("SCORES",12,TRUE)
   n&=0
-  FOR i&=0 TO 7
+  FOR i&=0 TO 9
     IF pj$(i&)<>""
-      y&=ADD(48,MUL(i&,14))
+      y&=ADD(30,MUL(i&,13))
       p$=pj$(i&)+"        "
       @menu.d2(pj.pt&(i&))
       @page.ligne(LEFT$(p$,8)+"   "+d2$,y&,FALSE)
@@ -1121,13 +1168,115 @@ PROCEDURE page.scores
     ENDIF
   NEXT i&
   IF n&=0
-    @page.ligne("AUCUN JOUEUR ENREGISTRE",92,TRUE)
+    @page.ligne("AUCUN JOUEUR ENREGISTRE",90,TRUE)
   ENDIF
-  @page.ligne("LES POINTS SE DONNENT AVEC F1 A F8",170,TRUE)
-  @page.ligne("PENDANT LE DEVOILEMENT DE L IMAGE",180,TRUE)
-  @page.ligne("ESPACE POUR REVENIR",192,TRUE)
-  @wait_key(&H39)
-  @page.fermer
+  @page.ligne("LES POINTS SE DONNENT AVEC F1 A F10",162,TRUE)
+  @page.ligne("PENDANT LE DEVOILEMENT DE L IMAGE",172,TRUE)
+  @page.ligne("BACKSPACE : TOUT REMETTRE A ZERO",182,TRUE)
+  @page.ligne("ESPACE : REVENIR ET ENREGISTRER",192,TRUE)
+RETURN
+.
+' !>
+PROCEDURE scores.raz
+  ' Remet les points a zero, garde les noms.
+  LOCAL i&
+  FOR i&=0 TO 9
+    pj.pt&(i&)=0
+  NEXT i&
+RETURN
+.
+' !>
+PROCEDURE scores.load
+  ' Relit SCORES.TXT s'il est la. Le fichier est lu d'un bloc puis decoupe en
+  ' memoire : pas de lecture ligne a ligne, donc aucun risque de tomber sur
+  ' une fin de fichier prematuree - ce qui, avec le ON ERROR GOSUB bye pose
+  ' dans @hello, ferait quitter le programme en pleine soiree.
+  ' Format, une valeur par ligne : le mot ADNQUIZZ, puis pour chacun des dix
+  ' emplacements son nom (ou un tiret) et ses points sur deux chiffres.
+  ' Modifiable a la main, c'est le but d'un fichier texte.
+  LOCAL n%,i&,a$
+  IF EXIST("SCORES.TXT")
+    OPEN "I",#1,"SCORES.TXT"
+    n%=LOF(#1)
+    a$=""
+    IF n%>0 AND n%<2000
+      a$=INPUT$(n%,#1)
+    ENDIF
+    CLOSE #1
+    IF LEFT$(a$,8)="ADNQUIZZ"
+      sc.reste$=a$
+      @scores.ligne ! l'entete
+      FOR i&=0 TO 9
+        @scores.ligne
+        IF sc.lig$="-" OR sc.lig$=""
+          pj$(i&)=""
+        ELSE
+          pj$(i&)=LEFT$(sc.lig$,8)
+        ENDIF
+        @scores.ligne
+        pj.pt&(i&)=VAL(sc.lig$)
+      NEXT i&
+    ENDIF
+  ENDIF
+RETURN
+.
+' !>
+PROCEDURE scores.ligne
+  ' Detache la premiere ligne de sc.reste$ vers sc.lig$. Rend une chaine vide
+  ' quand il n'y a plus rien : c'est ce qui rend la relecture insensible a un
+  ' fichier tronque ou retouche a la main.
+  LOCAL p&
+  p&=INSTR(sc.reste$,CHR$(13))
+  IF p&=0
+    p&=INSTR(sc.reste$,CHR$(10))
+  ENDIF
+  IF p&=0
+    sc.lig$=sc.reste$
+    sc.reste$=""
+  ELSE
+    sc.lig$=LEFT$(sc.reste$,PRED(p&))
+    sc.reste$=MID$(sc.reste$,SUCC(p&))
+  ENDIF
+  ' sauter le second caractere de fin de ligne s'il y en a un
+  IF LEN(sc.reste$)>0
+    IF LEFT$(sc.reste$,1)=CHR$(10) OR LEFT$(sc.reste$,1)=CHR$(13)
+      sc.reste$=MID$(sc.reste$,2)
+    ENDIF
+  ENDIF
+RETURN
+.
+' !>
+PROCEDURE scores.save
+  ' Ecrit SCORES.TXT. Toujours les dix emplacements, un tiret pour les vides,
+  ' pour que le fichier reste lisible et modifiable.
+  ' Le ON ERROR local n'est pas du luxe : disquette protegee, pleine ou
+  ' absente, et le gestionnaire general quitterait le programme. On renonce
+  ' a enregistrer et on le dit, c'est tout.
+  LOCAL i&
+  sc.ko!=FALSE
+  ON ERROR GOSUB scores.oops
+  OPEN "O",#1,"SCORES.TXT"
+  PRINT #1,"ADNQUIZZ"
+  FOR i&=0 TO 9
+    IF pj$(i&)=""
+      PRINT #1,"-"
+    ELSE
+      PRINT #1,pj$(i&)
+    ENDIF
+    @menu.d2(pj.pt&(i&))
+    PRINT #1,d2$
+  NEXT i&
+  CLOSE #1
+scores.fin:
+  ON ERROR GOSUB bye
+RETURN
+.
+' !>
+PROCEDURE scores.oops
+  ' Gestionnaire local. RESUME rend la main apres le bloc fichier, sans
+  ' relancer l'instruction fautive.
+  sc.ko!=TRUE
+  RESUME scores.fin
 RETURN
 .
 ' !>
@@ -1522,14 +1671,15 @@ PROCEDURE tatouche
   ENDIF
   ' Attribution d'un point pendant la revelation : F1 a F8 pour les huit
   ' emplacements de joueur. gfaxpert donne F1=$3B et F10=$44, soit dix
-  ' touches pour dix codes consecutifs, donc F1 a F8 vont de $3B a $42.
+  ' touches pour dix codes consecutifs - le ST n'en a pas douze. Avec Shift
+  ' on en aurait dix de plus ($54 a $5D) si le besoin se presentait.
   ' Les chiffres auraient ete plus naturels mais leurs codes ne sont pas
   ' dans le corpus, et sur un clavier francais ils demandent Shift.
   ' Front montant seulement : $FFFC02 garde le dernier code, une touche
   ' maintenue distribuerait un point a chaque appel.
   IF tatouche&<>pt.pk&
     pt.pk&=tatouche&
-    IF tatouche&>=&H3B AND tatouche&<=&H42
+    IF tatouche&>=&H3B AND tatouche&<=&H44
       @point(SUB(tatouche&,&H3B))
     ENDIF
   ENDIF
