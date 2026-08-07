@@ -301,6 +301,7 @@ PROCEDURE quizz
       @random_pixels(pix.duree&)
     ENDSELECT
     @fadereg0 ! monte la couleur de fond une fois l'image dessinee (cf. fadeon)
+    @image.seule ! l'image complete, seule : c'est la qu'on donne les points
     ' @scrambling
     ' display answer bitmap text on 2 lines : 1 : Artist Name  2 : Music Name
     @dboff ! screen double buffer off (basic fx)
@@ -316,6 +317,7 @@ PROCEDURE quizz
       ENDIF
     ENDIF
   NEXT file& ! next music to guess
+  @scores.fusion ! regrouper les doublons avant d'ecrire et de designer
   @scores.save ! fin naturelle d'une session, on garde les points
   @sndh.off
   BLOAD "DATA\ATRISTST.SND",tune%
@@ -649,7 +651,6 @@ PROCEDURE menu.init
   ' Etat clavier de depart : sans cela un code deja present serait pris pour
   ' un appui des la premiere trame.
   menu.pk&=BYTE{&HFFFC02}
-  pt.pk&=menu.pk&
   sai.max&=8 ! huit lettres, c'est ce qui tient dans les colonnes des pages ! meme precaution pour les touches de fonction du quizz
   @menu.rows
   menu.rf&=2
@@ -891,12 +892,12 @@ PROCEDURE page.regles
   @page.ligne("LE PREMIER QUI DONNE LE TITRE",27,TRUE)
   @page.ligne("DU MORCEAU MARQUE LE POINT",37,TRUE)
   @page.ligne("L IMAGE EST UN INDICE, PAS LA REPONSE",47,TRUE)
-  @page.ligne("ARTISTE ET TITRE S AFFICHENT ENSUITE",57,TRUE)
+  @page.ligne("IMAGE COMPLETE : ON DONNE LES POINTS",57,TRUE)
   @page.ligne("CONTROLES",72,TRUE)
   @page.ligne("ESPACE : DEMARRER, ABREGER, SUITE",84,TRUE)
   @page.ligne("BACKSPACE : MORCEAU PRECEDENT",94,TRUE)
   @page.ligne("FLECHES ET ENTREE : MENU D ACCUEIL",104,TRUE)
-  @page.ligne("F1 A F10 : POINT AU JOUEUR 1 A 10",114,TRUE)
+  @page.ligne("F1 A F10 : POINT, IMAGE DEVOILEE",114,TRUE)
   @page.ligne("NOM DEMANDE SI LE JOUEUR EST INCONNU",124,TRUE)
   @page.ligne("ECRAN FINAL : TAPEZ LE NOM DU GAGNANT",134,TRUE)
   @page.ligne("CREDITS",148,TRUE)
@@ -909,8 +910,46 @@ PROCEDURE page.regles
 RETURN
 .
 ' !>
+PROCEDURE image.seule
+  ' L'image complete, seule a l'ecran, avant que la reponse ne s'affiche.
+  ' C'est le moment ou l'animateur distribue les points : les touches F1 a
+  ' F10 n'agissent que la.
+  ' Deux raisons de l'avoir sortie de la revelation. On ne coupe plus un
+  ' effet en cours pour saisir un nom, et l'attribution tombe au moment
+  ' naturel : tout le monde voit l'image, la reponse n'est pas encore donnee,
+  ' on sait qui a trouve.
+  ' gfaxpert donne F1=$3B et F10=$44, soit dix touches pour dix codes
+  ' consecutifs - le ST n'en a pas douze. Avec Shift on en aurait dix de plus
+  ' ($54 a $5D) si le besoin se presentait. Les chiffres auraient ete plus
+  ' naturels mais leurs codes ne sont pas dans le corpus, et sur un clavier
+  ' francais ils demandent Shift.
+  ' Front montant seulement : $FFFC02 garde le dernier code, une touche
+  ' maintenue distribuerait un point par trame.
+  ' Le @wait.release final n'est pas decoratif : sans lui l'espace encore
+  ' enfonce ferait sauter l'ondulation de @txt.anim dans la foulee.
+  LOCAL k&,pk&,fini!
+  fini!=FALSE
+  pk&=BYTE{&HFFFC02}
+  REPEAT
+    VSYNC
+    k&=BYTE{&HFFFC02}
+    IF k&<>pk&
+      pk&=k&
+      IF k&>=&H3B AND k&<=&H44
+        @point(SUB(k&,&H3B))
+        pk&=BYTE{&HFFFC02} ! @point a pu bloquer le temps d'une saisie
+      ENDIF
+      IF k&=&H39
+        fini!=TRUE
+      ENDIF
+    ENDIF
+  UNTIL fini!
+  @wait.release
+RETURN
+.
+' !>
 PROCEDURE point(i&)
-  ' Un point au joueur i& (0 a 9), depuis F1 a F10 pendant la revelation.
+  ' Un point au joueur i& (0 a 9), depuis F1 a F10 dans @image.seule.
   ' Si l'emplacement est libre on demande d'abord le nom : c'est le cas du
   ' joueur qui trouve avant de s'etre inscrit.
   ' Tout se passe dans les 16 dernieres lignes de l'ecran, sauvees puis
@@ -936,7 +975,6 @@ PROCEDURE point(i&)
     @point.tenir(75) ! une seconde et demie
   ENDIF
   BMOVE bandsav%,phy%+29440,2560
-  pt.pk&=BYTE{&HFFFFC02}
 RETURN
 .
 ' !>
@@ -974,6 +1012,7 @@ PROCEDURE point.nom(i&)
       IF k&<128
         SELECT k&
         CASE &H1C
+          @saisie.propre
           pj$(i&)=sai$
           fini!=TRUE
         CASE &H01
@@ -1059,7 +1098,7 @@ PROCEDURE page.pjliste(s&)
   PBOX 0,y&,4,ADD(y&,4)
   ' On rappelle ici a quoi servent ces noms : la page des joueurs est le seul
   ' endroit ou l'on vient avant la partie, c'est donc la qu'il faut le dire.
-  @page.ligne("LA TOUCHE F DONNE LE POINT",160,TRUE)
+  @page.ligne("TOUCHE F : POINT, IMAGE DEVOILEE",160,TRUE)
   @page.ligne("NOM VIDE : EMPLACEMENT LIBERE",170,TRUE)
   @page.ligne("FLECHES : CHOISIR   ENTREE : NOMMER",180,TRUE)
   @page.ligne("ESPACE : REVENIR",190,TRUE)
@@ -1084,6 +1123,7 @@ PROCEDURE page.saisie(s&)
       IF k&<128
         SELECT k&
         CASE &H1C
+          @saisie.propre
           ' Invariant tenu partout : un emplacement sans nom a zero point.
           ' Vider le nom est donc la facon de rendre l'emplacement, et le
           ' suivant qui s'y installe ne recupere pas les points du precedent.
@@ -1118,11 +1158,32 @@ PROCEDURE saisie.lettre(code&)
   LOCAL a&
   IF keytbl%>0 AND LEN(sai$)<sai.max&
     a&=BYTE{keytbl%+code&}
-    IF a&>=97 AND a&<=122
-      SUB a&,32
+    IF a&=32
+      ' Espace accepte, mais ni en tete ni deux de suite : ca ne se verrait
+      ' pas a l'ecran et ca mangerait la longueur utile.
+      IF LEN(sai$)>0
+        IF RIGHT$(sai$,1)<>" "
+          sai$=sai$+" "
+        ENDIF
+      ENDIF
+    ELSE
+      IF a&>=97 AND a&<=122
+        SUB a&,32
+      ENDIF
+      IF a&>=65 AND a&<=90
+        sai$=sai$+CHR$(a&)
+      ENDIF
     ENDIF
-    IF a&>=65 AND a&<=90
-      sai$=sai$+CHR$(a&)
+  ENDIF
+RETURN
+.
+' !>
+PROCEDURE saisie.propre
+  ' Retire l'espace final s'il y en a un. @saisie.lettre en interdit deux de
+  ' suite et un en tete, il ne peut donc en rester qu'un seul, a la fin.
+  IF LEN(sai$)>0
+    IF RIGHT$(sai$,1)=" "
+      sai$=LEFT$(sai$,PRED(LEN(sai$)))
     ENDIF
   ENDIF
 RETURN
@@ -1134,7 +1195,7 @@ PROCEDURE page.nom
   RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
   @page.ligne("NOM DU JOUEUR",16,TRUE)
   @page.ligne(sai$+"-",92,TRUE)
-  @page.ligne("LETTRES SEULEMENT, HUIT AU PLUS",156,TRUE)
+  @page.ligne("LETTRES ET ESPACES, HUIT AU PLUS",156,TRUE)
   @page.ligne("VIDER LE NOM LIBERE L EMPLACEMENT",168,TRUE)
   @page.ligne("ENTREE VALIDE   ESC ANNULE",184,TRUE)
 RETURN
@@ -1328,7 +1389,7 @@ PROCEDURE page.scliste
     @page.ligne("AUCUN JOUEUR ENREGISTRE",90,TRUE)
   ENDIF
   @page.ligne("LES POINTS SE DONNENT AVEC F1 A F10",162,TRUE)
-  @page.ligne("PENDANT LE DEVOILEMENT DE L IMAGE",172,TRUE)
+  @page.ligne("UNE FOIS L IMAGE DEVOILEE EN ENTIER",172,TRUE)
   @page.ligne("BACKSPACE : TOUT REMETTRE A ZERO",182,TRUE)
   @page.ligne("ESPACE : REVENIR ET ENREGISTRER",192,TRUE)
 RETURN
@@ -1485,7 +1546,8 @@ PROCEDURE finale
   scroll$=scroll$+"GREETINGS A JBFOU ET DIANE, QUI FONT TOURNER L'ADN PARTY "
   scroll$=scroll$+"A TANTONVILLE, ET A TOUS LES JOYEUX ATARISTES BOUT-EN-TRAIN "
   scroll$=scroll$+"QUI ONT REPONDU PRESENT.   -   "
-  scroll$=scroll$+"TAPEZ LE NOM DU GAGNANT ET ESPACE POUR L'AFFICHER.   "
+  scroll$=scroll$+"LE MEILLEUR SCORE S'AFFICHE TOUT SEUL ; SINON TAPEZ UN NOM "
+  scroll$=scroll$+"ET ENTREE.   "
   scroll$=scroll$+"ESPACE SEUL POUR RENDRE LA MAIN AU BUREAU.      "
   ' Palette propre au feu d'artifice. @clearpal a mis tous les registres a
   ' zero et le seul XBIOS(6) qui les restaurait etait dans screen.opening,
@@ -1537,7 +1599,7 @@ PROCEDURE finale
   ' tient pas dans dix emplacements, et personne n'a envie de les saisir.
   ' Seize lettres ici : il n'y a pas de colonne a respecter, contrairement
   ' aux pages des joueurs et des scores.
-  gagnant$=""
+  @finale.gagnant
   sai$=""
   sai.max&=16
   txt.phase&=0
@@ -1560,16 +1622,68 @@ PROCEDURE finale
 RETURN
 .
 ' !>
+PROCEDURE finale.gagnant
+  ' Cherche le meilleur score parmi les joueurs inscrits. S'il y en a un,
+  ' l'annonce est prete avant meme qu'on touche au clavier ; sinon l'ecran
+  ' reste nu et on tape un nom a la main - c'est le cas des soirees ou le
+  ' registre ne sert pas.
+  ' Les ex aequo sont TOUS nommes, pas seulement les deux premiers : en
+  ' annoncer un sur trois serait injuste. Si la ligne deborde des 36
+  ' caracteres, on le dit par des points de suspension plutot que de couper
+  ' en silence.
+  LOCAL i&,mx&,n&,pl!
+  gagnant$=""
+  gtitre$="LE GAGNANT EST"
+  mx&=0
+  pl!=FALSE
+  FOR i&=0 TO 9
+    IF pj$(i&)<>"" AND pj.pt&(i&)>mx&
+      mx&=pj.pt&(i&)
+    ENDIF
+  NEXT i&
+  IF mx&>0
+    n&=0
+    FOR i&=0 TO 9
+      IF pj$(i&)<>"" AND pj.pt&(i&)=mx&
+        INC n&
+        IF LEN(gagnant$)=0
+          gagnant$=pj$(i&)
+        ELSE
+          IF LEN(gagnant$)+4+LEN(pj$(i&))<=36
+            gagnant$=gagnant$+" ET "+pj$(i&)
+          ELSE
+            pl!=TRUE
+          ENDIF
+        ENDIF
+      ENDIF
+    NEXT i&
+    IF pl!
+      gagnant$=gagnant$+" ..."
+    ENDIF
+    IF n&>1
+      gtitre$="EX AEQUO"
+    ENDIF
+  ENDIF
+RETURN
+.
+' !>
 PROCEDURE finale.touche(code&)
-  ' Espace fait deux choses selon l'etat : il valide le nom en cours de
-  ' frappe, ou, si rien n'est tape, il rend la main au bureau. Pour qui ne se
-  ' sert pas de l'annonce, l'ecran final se comporte donc comme avant.
+  ' ENTREE valide le nom tape. Espace sert de deux facons selon l'etat : il
+  ' ajoute un espace au nom en cours de frappe, ou, si rien n'est tape, il
+  ' rend la main au bureau. Pour qui ne se sert pas de l'annonce, l'ecran
+  ' final se comporte donc comme avant, a une touche pres.
   ' ESC efface tout, saisie comme gagnant affiche.
   SELECT code&
+  CASE &H1C
+    IF LEN(sai$)>0
+      @saisie.propre
+      gagnant$=sai$
+      gtitre$="LE GAGNANT EST"
+      sai$=""
+    ENDIF
   CASE &H39
     IF LEN(sai$)>0
-      gagnant$=sai$
-      sai$=""
+      @saisie.lettre(code&)
     ELSE
       fin.sortie!=TRUE
     ENDIF
@@ -1601,10 +1715,10 @@ PROCEDURE finale.nom
     RC_COPY log%,0,86,320,36 TO log%,0,86,0
     txt.phase&=AND(SUCC(txt.phase&),15)
     IF LEN(sai$)>0
-      @txt.ligne("TAPEZ LE NOM DU GAGNANT",92,1,0)
+      @txt.ligne("NOM DU GAGNANT - ENTREE VALIDE",92,1,0)
       @txt.ligne(sai$+"-",110,2,8)
     ELSE
-      @txt.ligne("LE GAGNANT EST",92,1,0)
+      @txt.ligne(gtitre$,92,1,0)
       @txt.ligne(gagnant$,110,2,8)
     ENDIF
   ENDIF
@@ -1896,20 +2010,9 @@ PROCEDURE tatouche
   IF tatouche&=&H39
     pixl_exit&=1
   ENDIF
-  ' Attribution d'un point pendant la revelation : F1 a F8 pour les huit
-  ' emplacements de joueur. gfaxpert donne F1=$3B et F10=$44, soit dix
-  ' touches pour dix codes consecutifs - le ST n'en a pas douze. Avec Shift
-  ' on en aurait dix de plus ($54 a $5D) si le besoin se presentait.
-  ' Les chiffres auraient ete plus naturels mais leurs codes ne sont pas
-  ' dans le corpus, et sur un clavier francais ils demandent Shift.
-  ' Front montant seulement : $FFFC02 garde le dernier code, une touche
-  ' maintenue distribuerait un point a chaque appel.
-  IF tatouche&<>pt.pk&
-    pt.pk&=tatouche&
-    IF tatouche&>=&H3B AND tatouche&<=&H44
-      @point(SUB(tatouche&,&H3B))
-    ENDIF
-  ENDIF
+  ' Les touches de fonction ne sont plus lues ici. L'attribution des points
+  ' se fait dans @image.seule, une fois la revelation terminee : on ne coupe
+  ' plus un effet en cours pour saisir un nom.
 RETURN
 '
 PROCEDURE pixinit
