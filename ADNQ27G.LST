@@ -146,7 +146,10 @@ PROCEDURE hello
   DIM fx&(63),fy&(63),fvx&(63),fvy&(63),fvie&(63) ! particules du feu d'artifice
   DIM epx&(1,63),epy&(1,63) ! positions dessinees, une generation par tampon
   DIM mrow$(3),pj$(9),pj.pt&(9) ! libelles du menu, dix joueurs et leurs points
-  DIM stx&(39),sty&(39),stv&(39),stm&(39) ! champ d'etoiles de la page des scores
+  DIM stx&(39),sty&(39),stv&(39) ! champ d'etoiles des pages
+  DIM ord.sc&(9) ! ordre d'affichage du classement
+  DIM vuf&(2,2),vucol&(2) ! remplissage et couleur des zones du VU-metre
+  DIM cyc.r|(6),cyc.v|(6),cyc.b|(6) ! rampe de couleurs cyclee
   RESTORE sin.vague
   FOR i&=0 TO 15
     READ sinus&(i&)
@@ -649,7 +652,8 @@ PROCEDURE menu.init
   ' Etat clavier de depart : sans cela un code deja present serait pris pour
   ' un appui des la premiere trame.
   menu.pk&=BYTE{&HFFFC02}
-  sai.max&=8 ! huit lettres, c'est ce qui tient dans les colonnes des pages ! meme precaution pour les touches de fonction du quizz
+  sai.max&=8 ! huit lettres, c'est ce qui tient dans les colonnes des pages
+  pg.col&=15 ! couleur de page ; 15 = pas de teinture, cf. @page.ligne
   @menu.rows
   menu.rf&=2
   menu.rc&=0
@@ -816,6 +820,16 @@ PROCEDURE page.jukebox
   jb.titres!=FALSE
   @page.ouvrir
   @page.anim.on
+  ' Palette fixe ici : pas de cyclage, la page doit rester lisible pendant
+  ' qu'on cherche un morceau. Trois couleurs pour les zones du VU-metre, la
+  ' septieme pour le texte.
+  @page.col(1,7,0,0) ! rouge, zone haute
+  @page.col(2,7,6,0) ! jaune, zone mediane
+  @page.col(3,0,7,2) ! vert, zone basse
+  @page.col(7,7,7,5) ! creme, le texte
+  vucol&(0)=3
+  vucol&(1)=2
+  vucol&(2)=1
   @page.jbdraw
   pk&=BYTE{&HFFFC02}
   REPEAT
@@ -877,6 +891,13 @@ PROCEDURE page.jbdraw
   ' sous le numero choisi.
   LOCAL i&,r&,c&,y&,x&,t$
   RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
+  ' L'ecran vient d'etre efface : le VU-metre doit repartir de zero, sinon il
+  ' croirait ses barres encore en place et ne redessinerait que les ecarts.
+  FOR r&=0 TO 2
+    FOR c&=0 TO 2
+      vuf&(r&,c&)=0
+    NEXT c&
+  NEXT r&
   @page.ligne("JUKEBOX",4,TRUE)
   @menu.d2(SUCC(jb.no&))
   @page.ligne("MORCEAU "+d2$,20,TRUE)
@@ -902,7 +923,7 @@ PROCEDURE page.jbdraw
   c&=MOD(jb.no&,10)
   x&=ADD(44,MUL(c&,24))
   y&=ADD(61,MUL(r&,16))
-  DEFFILL vdicol|(3)
+  DEFFILL vdicol|(7)
   PBOX x&,y&,ADD(x&,15),SUCC(y&)
   @page.ligne("HAUT BAS : UN   GAUCHE DROITE : DIX",158,TRUE)
   @page.ligne("ENTREE : ECOUTER   BACKSPACE : TITRES",170,TRUE)
@@ -911,15 +932,17 @@ RETURN
 .
 ' !>
 PROCEDURE page.jbvu
-  ' Trois barres, une par voie du YM, redessinees a chaque trame. La bande
-  ' est effacee puis repeinte ; les etoiles qui la traversent partent avec,
-  ' et @stars.step les repose ailleurs sans rien casser - il n'ecrit jamais
-  ' qu'aux deux positions qu'il connait.
+  ' Trois barres, une par voie du YM, en trois zones de couleur : vert en
+  ' bas, jaune au milieu, rouge en haut.
+  ' Chaque zone n'est retouchee que si son remplissage a change, et on ne
+  ' touche alors qu'a la difference. La version precedente effacait toute la
+  ' bande puis la repeignait a chaque trame : sur un ecran en simple tampon,
+  ' l'oeil voyait l'etat vide une trame sur deux, d'ou le clignotement.
+  ' Cinq niveaux par zone, trois pixels par niveau, zones de 15 pixels a
+  ' partir de la base y=147.
   ' XBIOS(28,0,reg) = Giaccess. 8 = voie A, 9 = B, 10 = C, bits 3-0 = niveau,
   ' bit 4 a 1 = volume pilote par l'enveloppe, on affiche le maximum.
-  LOCAL v&,c&,h&,x&
-  RC_COPY phy%,88,102,144,46 TO phy%,88,102,0
-  DEFFILL vdicol|(3)
+  LOCAL v&,c&,h&,z&,f&,x&,yb&,y1&,y2&
   x&=88
   FOR c&=0 TO 2
     v&=XBIOS(28,0,ADD(8,c&))
@@ -928,9 +951,29 @@ PROCEDURE page.jbvu
     ELSE
       h&=v& AND 15
     ENDIF
-    IF h&>0
-      PBOX x&,SUB(148,MUL(h&,3)),ADD(x&,43),147
-    ENDIF
+    FOR z&=0 TO 2
+      f&=SUB(h&,MUL(z&,5))
+      IF f&<0
+        f&=0
+      ENDIF
+      IF f&>5
+        f&=5
+      ENDIF
+      IF f&<>vuf&(c&,z&)
+        yb&=SUB(147,MUL(z&,15))
+        IF f&>vuf&(c&,z&)
+          y1&=SUB(SUCC(yb&),MUL(f&,3))
+          y2&=SUB(yb&,MUL(vuf&(c&,z&),3))
+          DEFFILL vdicol|(vucol&(z&))
+          PBOX x&,y1&,ADD(x&,43),y2&
+        ELSE
+          y1&=SUB(SUCC(yb&),MUL(vuf&(c&,z&),3))
+          y2&=SUB(yb&,MUL(f&,3))
+          RC_COPY phy%,x&,y1&,44,SUCC(SUB(y2&,y1&)) TO phy%,x&,y1&,0
+        ENDIF
+        vuf&(c&,z&)=f&
+      ENDIF
+    NEXT z&
     ADD x&,48
   NEXT c&
 RETURN
@@ -956,7 +999,9 @@ RETURN
 .
 ' !>
 PROCEDURE page.ligne(t$,y&,centre!)
-  ' Une ligne de page. 38 caracteres au plus, c'est ce qui tient en 320.
+  ' Une ligne de page, dans la couleur pg.col&. 38 caracteres au plus, c'est
+  ' ce qui tient en 320. pg.col& vaut 15 hors des pages animees et la
+  ' teinture est alors sautee : le comportement d'origine est conserve.
   LOCAL x&
   IF centre!
     x&=160-SHL&(LEN(t$),2) ! 8 pixels par caractere, donc 4 par demi
@@ -964,6 +1009,9 @@ PROCEDURE page.ligne(t$,y&,centre!)
     x&=8
   ENDIF
   @menu.text(t$,x&,y&,phy%)
+  IF pg.col&<15 AND LEN(t$)>0
+    @page.teindre(x&,y&,LEN(t$),pg.col&)
+  ENDIF
 RETURN
 .
 ' !>
@@ -1327,12 +1375,15 @@ PROCEDURE page.scores
   @scores.fusion
   @page.ouvrir
   @page.anim.on
+  @page.col(7,7,7,5) ! creme fixe pour le titre et les pieds de page
+  @cyc.init
   @page.scliste
   fini!=FALSE
   pk&=BYTE{&HFFFC02}
   REPEAT
     VSYNC
     @page.anim.step
+    @cyc.step
     k&=BYTE{&HFFFC02}
     IF k&<>pk&
       pk&=k&
@@ -1386,93 +1437,159 @@ RETURN
 .
 ' !>
 PROCEDURE page.anim.on
-  ' Prepare une page animee. La fonte est repeinte en couleur 3, donc dans
-  ' les plans 0 et 1 ; les etoiles n'allument que les plans 2 et 3. Une
-  ' etoile qui passe sur une lettre ne peut donc pas l'abimer et il n'y a
-  ' rien a redessiner - c'est ce qui rend l'animation gratuite sur un ecran
-  ' en simple tampon.
-  ' Palette : 0 le noir, 4 / 8 / 12 les trois profondeurs d'etoile, et
-  ' 3 / 7 / 11 / 15 la couleur du texte. Ces trois derniers sont les
-  ' combinaisons "texte + etoile" : leur donner la couleur du texte fait
-  ' passer les lettres devant le champ.
-  ' A appeler APRES @page.ouvrir et AVANT de dessiner quoi que ce soit.
-  recolor_font(3)
+  ' Prepare une page animee.
+  '
+  ' Repartition des plans : le texte occupe les plans 0 a 2, les etoiles le
+  ' seul plan 3. Une etoile qui passe sur une lettre ne peut donc pas
+  ' l'abimer et il n'y a rien a redessiner - c'est ce qui rend l'animation
+  ' gratuite sur un ecran en simple tampon.
+  ' Palette : 0 le noir, 1 a 7 les sept couleurs de texte, 8 l'etoile, et
+  ' 9 a 15 le miroir de 1 a 7. Ces sept derniers sont les combinaisons
+  ' "texte + etoile" : leur donner la couleur du texte fait passer les
+  ' lettres devant le champ. Seize registres, tous utilises.
+  ' Sept couleurs et pas dix : avec deux plans d'etoiles on n'en aurait que
+  ' trois, avec un seul on en a sept, et il n'y a pas de troisieme partage.
+  ' Le prix est la profondeur des etoiles, qui ne se lit plus qu'a la vitesse.
+  '
+  ' La fonte est repeinte tous plans allumes ; @page.ligne pose le texte en
+  ' 15 puis eteint les plans en trop, cf. @page.teindre. Le plus souvent
+  ' ink_col& vaut deja 15 et la repeinte ne coute rien.
+  IF ink_col&<>15
+    recolor_font(15)
+  ENDIF
+  pg.col&=7
   SETCOLOR 0,0,0,0
-  SETCOLOR 4,2,2,3
-  SETCOLOR 8,4,4,5
-  SETCOLOR 12,7,7,7
+  @page.col(8,4,4,5)
   @stars.init
   sc.teinte&=0
 RETURN
 .
 ' !>
+PROCEDURE page.col(i&,r&,v&,b&)
+  ' Pose un registre de page. Au-dessous de 8 on pose aussi son miroir : le
+  ' registre "texte + etoile" doit toujours suivre, sinon une etoile qui
+  ' passe derriere une lettre la ferait changer de couleur.
+  SETCOLOR i&,r&,v&,b&
+  IF i&<8
+    SETCOLOR ADD(i&,8),r&,v&,b&
+  ENDIF
+RETURN
+.
+' !>
 PROCEDURE page.anim.step
-  ' Une trame d'animation de page.
+  ' Une trame d'animation de page. Le cyclage des couleurs est a la charge
+  ' de la page : toutes n'en veulent pas.
   @stars.step
-  sc.teinte&=AND(SUCC(sc.teinte&),255)
-  @page.teinte
 RETURN
 .
 ' !>
 PROCEDURE page.anim.off
   ' Rend la fonte et la palette au reste du programme.
-  recolor_font(ink_col&)
+  pg.col&=15
+  IF ink_col&<>15
+    recolor_font(ink_col&)
+  ENDIF
   ~XBIOS(6,L:pal%)
 RETURN
 .
 ' !>
-PROCEDURE page.teinte
-  ' Le texte respire, de l'ambre au blanc chaud. La table sinus est celle de
-  ' la croche, dimensionnee par @note3d.init qui tourne avant tout menu.
-  LOCAL c&
-  c&=ADD(4,SHR&(ADD(n3sin&(sc.teinte&),128),6)) ! 4 a 7
-  SETCOLOR 3,7,c&,SHR&(c&,1)
-  SETCOLOR 7,7,c&,SHR&(c&,1)
-  SETCOLOR 11,7,c&,SHR&(c&,1)
-  SETCOLOR 15,7,c&,SHR&(c&,1)
+PROCEDURE page.teindre(xb&,yb&,nc&,c&)
+  ' Ramene une ligne posee en couleur 15 vers la couleur c& : il suffit
+  ' d'eteindre les plans que c& n'utilise pas. Ecriture directe, aucun appel
+  ' VDI, et la fonte reste intacte pour tout le reste du programme - une
+  ' repeinte par ligne aurait coute 5000 iterations a chaque fois.
+  ' On efface par groupes de 16 pixels : deborder sur les cotes est sans
+  ' consequence, les lignes de page sont seules sur leur bande.
+  LOCAL p&,l&,g&,a%,g1&,g2&
+  g1&=SHR&(xb&,4)
+  g2&=SHR&(PRED(ADD(xb&,SHL&(nc&,3))),4)
+  FOR p&=0 TO 3
+    IF NOT (c& AND SHL&(1,p&))
+      FOR l&=0 TO 7
+        a%=ADD(phy%,ADD(t160&(ADD(yb&,l&)),ADD(SHL&(g1&,3),SHL&(p&,1))))
+        FOR g&=g1& TO g2&
+          CARD{a%}=0
+          ADD a%,8
+        NEXT g&
+      NEXT l&
+    ENDIF
+  NEXT p&
+RETURN
+.
+' !>
+PROCEDURE cyc.init
+  ' Rampe de six couleurs, cyclee sur la page des scores. Les registres 1 a 6
+  ' la recoivent, decalee d'un cran toutes les six trames : les couleurs
+  ' descendent le long du classement.
+  ' Le registre 7 reste HORS de la rampe et sert au titre et aux pieds de
+  ' page : ce qui doit rester lisible ne doit pas changer de couleur.
+  LOCAL i&
+  RESTORE cyc.rampe
+  FOR i&=0 TO 5
+    READ cyc.r|(i&),cyc.v|(i&),cyc.b|(i&)
+  NEXT i&
+  cyc.ph&=0
+  cyc.t&=0
+  @cyc.pose
+cyc.rampe:
+' Rouge, orange, jaune, vert, cyan, magenta. Composantes ST sur 3 bits.
+DATA 7,0,0, 7,4,0, 7,7,0
+DATA 0,7,0, 0,7,7, 7,0,7
+RETURN
+.
+' !>
+PROCEDURE cyc.pose
+  ' Pose la rampe dans les registres 1 a 7, decalee de cyc.ph&.
+  LOCAL i&,j&
+  FOR i&=0 TO 5
+    j&=ADD(i&,cyc.ph&)
+    IF j&>5
+      SUB j&,6
+    ENDIF
+    @page.col(SUCC(i&),cyc.r|(j&),cyc.v|(j&),cyc.b|(j&))
+  NEXT i&
+RETURN
+.
+' !>
+PROCEDURE cyc.step
+  ' Un cran toutes les six trames. Plus vite, l'ecran devient illisible.
+  cyc.t&=SUCC(cyc.t&)
+  IF cyc.t&>=6
+    cyc.t&=0
+    cyc.ph&=SUCC(cyc.ph&)
+    IF cyc.ph&>5
+      cyc.ph&=0
+    ENDIF
+    @cyc.pose
+  ENDIF
 RETURN
 .
 ' !>
 PROCEDURE stars.init
-  ' 40 etoiles sur trois couches. La couche donne a la fois la vitesse et les
-  ' bits de plan, donc la profondeur se lit sans test supplementaire.
-  LOCAL i&,c&
+  ' 40 etoiles sur trois vitesses. Elles n'occupent plus qu'un seul plan, le
+  ' 3, ce qui laisse les plans 0 a 2 au texte : sept couleurs au lieu de
+  ' trois. Le prix est la profondeur, qui ne se lit plus qu'a la vitesse et
+  ' non a la luminosite.
+  LOCAL i&
   FOR i&=0 TO 39
     stx&(i&)=RANDOM(320)
     sty&(i&)=RANDOM(200)
-    c&=MOD(i&,3)
-    stv&(i&)=SUCC(c&)
-    IF c&=0
-      stm&(i&)=4
-    ELSE
-      IF c&=1
-        stm&(i&)=8
-      ELSE
-        stm&(i&)=12
-      ENDIF
-    ENDIF
+    stv&(i&)=SUCC(MOD(i&,3))
   NEXT i&
 RETURN
 .
 ' !>
 PROCEDURE stars.step
   ' Une trame : chaque etoile est effacee a son ancienne place puis reposee a
-  ' la nouvelle, uniquement dans les plans 2 et 3. Ecriture directe en
-  ' memoire, aucun appel VDI - c'est le meme motif d'adressage que
-  ' @recolor_font.
-  LOCAL i&,x&,y&,a%,m&,nm&
+  ' la nouvelle, dans le seul plan 3. Ecriture directe en memoire, aucun
+  ' appel VDI - c'est le meme motif d'adressage que @recolor_font.
+  LOCAL i&,x&,y&,a%,m&
   FOR i&=0 TO 39
     x&=stx&(i&)
     y&=sty&(i&)
-    a%=ADD(phy%,ADD(t160&(y&),SHL&(SHR&(x&,4),3)))
+    a%=ADD(phy%,ADD(t160&(y&),ADD(SHL&(SHR&(x&,4),3),6)))
     m&=SHL&(1,15-AND(x&,15))
-    nm&=NOT m&
-    IF stm&(i&) AND 4
-      CARD{a%+4}=CARD{a%+4} AND nm&
-    ENDIF
-    IF stm&(i&) AND 8
-      CARD{a%+6}=CARD{a%+6} AND nm&
-    ENDIF
+    CARD{a%}=CARD{a%} AND NOT m&
     SUB x&,stv&(i&)
     IF x&<0
       ADD x&,320
@@ -1480,14 +1597,9 @@ PROCEDURE stars.step
       sty&(i&)=y&
     ENDIF
     stx&(i&)=x&
-    a%=ADD(phy%,ADD(t160&(y&),SHL&(SHR&(x&,4),3)))
+    a%=ADD(phy%,ADD(t160&(y&),ADD(SHL&(SHR&(x&,4),3),6)))
     m&=SHL&(1,15-AND(x&,15))
-    IF stm&(i&) AND 4
-      CARD{a%+4}=CARD{a%+4} OR m&
-    ENDIF
-    IF stm&(i&) AND 8
-      CARD{a%+6}=CARD{a%+6} OR m&
-    ENDIF
+    CARD{a%}=CARD{a%} OR m&
   NEXT i&
 RETURN
 .
@@ -1495,25 +1607,53 @@ RETURN
 PROCEDURE page.scliste
   ' Les dix lignes. Les noms sont completes a huit caracteres pour que la
   ' colonne des points reste alignee.
-  ' Les lignes sont tassees : apres une fusion de doublons il reste des trous
-  ' dans pj$(), on affiche donc a la suite plutot qu'a l'indice.
-  LOCAL i&,n&,y&,p$
+  ' Classement du meilleur au moins bon. On ne touche pas a pj$() : la touche
+  ' de fonction reste liee a l'emplacement, et c'est elle qu'on affiche a
+  ' cote du nom - elle apparait donc dans le desordre, ce qui est justement
+  ' l'information utile.
+  ' Une couleur par ligne, prise dans la rampe cyclee des registres 1 a 6.
+  ' Six couleurs pour dix places : les rangs 7 a 10 reprennent celles du
+  ' haut, ce sont les plus bas scores et la repetition ne saute pas aux yeux.
+  ' Le titre et les pieds de page gardent le registre 7, hors rampe.
+  LOCAL i&,j&,n&,b&,y&,p$
   RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
+  pg.col&=7
   @page.ligne("SCORES",12,TRUE)
   n&=0
   FOR i&=0 TO 9
     IF pj$(i&)<>""
-      y&=ADD(30,MUL(n&,13))
-      p$=pj$(i&)+"        "
-      @menu.ftouche(i&)
-      @menu.d2(pj.pt&(i&))
-      @page.ligne(ft$+LEFT$(p$,8)+"   "+d2$,y&,FALSE)
+      ord.sc&(n&)=i&
       INC n&
     ENDIF
   NEXT i&
+  ' tri par selection, dix elements au plus : la simplicite prime
+  IF n&>1
+    FOR i&=0 TO SUB(n&,2)
+      b&=i&
+      FOR j&=SUCC(i&) TO PRED(n&)
+        IF pj.pt&(ord.sc&(j&))>pj.pt&(ord.sc&(b&))
+          b&=j&
+        ENDIF
+      NEXT j&
+      IF b&<>i&
+        SWAP ord.sc&(i&),ord.sc&(b&)
+      ENDIF
+    NEXT i&
+  ENDIF
+  FOR j&=0 TO PRED(n&)
+    i&=ord.sc&(j&)
+    y&=ADD(30,MUL(j&,13))
+    p$=pj$(i&)+"        "
+    @menu.ftouche(i&)
+    @menu.d2(pj.pt&(i&))
+    pg.col&=SUCC(MOD(j&,6))
+    @page.ligne(ft$+LEFT$(p$,8)+"   "+d2$,y&,FALSE)
+  NEXT j&
+  pg.col&=7
   IF n&=0
     @page.ligne("AUCUN JOUEUR ENREGISTRE",90,TRUE)
   ENDIF
+  sc.nb&=n&
   @page.ligne("LES POINTS SE DONNENT AVEC F1 A F10",162,TRUE)
   @page.ligne("UNE FOIS L IMAGE DEVOILEE EN ENTIER",172,TRUE)
   @page.ligne("BACKSPACE : TOUT REMETTRE A ZERO",182,TRUE)
