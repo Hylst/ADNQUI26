@@ -999,15 +999,33 @@ RETURN
 .
 ' !>
 PROCEDURE page.txt(t$,xb&,yb&)
-  ' Texte a une abscisse libre, dans la couleur pg.col&. @page.ligne ne sait
-  ' que centrer ou caler a gauche ; la grille du jukebox a besoin d'autre
-  ' chose. Sans la teinture, le texte resterait en 15 : invisible a l'oeil
-  ' puisque 15 est le miroir de 7, mais une etoile qui passe dessus en
-  ' effacant le plan 3 le ferait basculer en 7 - autant le poser tout de
-  ' suite dans la bonne couleur.
-  @menu.text(t$,xb&,yb&,phy%)
-  IF pg.col&<15 AND LEN(t$)>0
-    @page.teindre(xb&,yb&,LEN(t$),pg.col&)
+  ' Une ligne de page, dans la couleur pg.col&, a une abscisse libre.
+  '
+  ' La cellule est peinte dans la couleur voulue, puis le ET logique de
+  ' RC_COPY n'en laisse que ce qui est sous les pixels du glyphe. Autant
+  ' d'appels VDI que le couple masque + fonte utilise ailleurs, et une
+  ' couleur par ligne sans repeindre la fonte.
+  ' Cela marche quelle que soit la couleur de la fonte : sur les pages
+  ' animees elle vaut 15, tous plans allumes, et la cellule ressort en
+  ' pg.col& ; sur les autres pg.col& vaut 15 et c'est la fonte qui donne la
+  ' couleur, comme avant.
+  '
+  ' La version precedente posait le texte en 15 puis eteignait les plans en
+  ' trop a la main. Elle testait "IF NOT (c& AND bit)" : en GFA, NOT est bit
+  ' a bit sur 32 bits, donc NOT 4 vaut -5, non nul, donc VRAI. Les quatre
+  ' plans etaient eteints a tous les coups et le texte passait en couleur 0.
+  LOCAL i&,pc&,cx&
+  IF LEN(t$)>0
+    DEFFILL vdicol|(pg.col&)
+    cx&=xb&
+    FOR i&=1 TO LEN(t$)
+      pc&=PRED(INSTR(font.chars$,MID$(t$,i&,1)))
+      IF pc&>=0 AND pc&<PRED(len.font&)
+        PBOX cx&,yb&,ADD(cx&,7),ADD(yb&,7)
+        RC_COPY font%,bitmap.char.x&(pc&),bitmap.char.y&(pc&),8,8 TO phy%,cx&,yb&,1
+      ENDIF
+      ADD cx&,8
+    NEXT i&
   ENDIF
 RETURN
 .
@@ -1022,10 +1040,7 @@ PROCEDURE page.ligne(t$,y&,centre!)
   ELSE
     x&=8
   ENDIF
-  @menu.text(t$,x&,y&,phy%)
-  IF pg.col&<15 AND LEN(t$)>0
-    @page.teindre(x&,y&,LEN(t$),pg.col&)
-  ENDIF
+  @page.txt(t$,x&,y&)
 RETURN
 .
 ' !>
@@ -1464,9 +1479,9 @@ PROCEDURE page.anim.on
   ' trois, avec un seul on en a sept, et il n'y a pas de troisieme partage.
   ' Le prix est la profondeur des etoiles, qui ne se lit plus qu'a la vitesse.
   '
-  ' La fonte est repeinte tous plans allumes ; @page.ligne pose le texte en
-  ' 15 puis eteint les plans en trop, cf. @page.teindre. Le plus souvent
-  ' ink_col& vaut deja 15 et la repeinte ne coute rien.
+  ' La fonte doit etre tous plans allumes : @page.txt peint la cellule dans
+  ' la couleur voulue puis ne garde que ce qui est sous le glyphe. Le plus
+  ' souvent ink_col& vaut deja 15 et la repeinte ne coute rien.
   IF ink_col&<>15
     recolor_font(15)
   ENDIF
@@ -1516,30 +1531,6 @@ PROCEDURE page.anim.off
     recolor_font(ink_col&)
   ENDIF
   ~XBIOS(6,L:pal%)
-RETURN
-.
-' !>
-PROCEDURE page.teindre(xb&,yb&,nc&,c&)
-  ' Ramene une ligne posee en couleur 15 vers la couleur c& : il suffit
-  ' d'eteindre les plans que c& n'utilise pas. Ecriture directe, aucun appel
-  ' VDI, et la fonte reste intacte pour tout le reste du programme - une
-  ' repeinte par ligne aurait coute 5000 iterations a chaque fois.
-  ' On efface par groupes de 16 pixels : deborder sur les cotes est sans
-  ' consequence, les lignes de page sont seules sur leur bande.
-  LOCAL p&,l&,g&,a%,g1&,g2&
-  g1&=SHR&(xb&,4)
-  g2&=SHR&(PRED(ADD(xb&,SHL&(nc&,3))),4)
-  FOR p&=0 TO 3
-    IF NOT (c& AND SHL&(1,p&))
-      FOR l&=0 TO 7
-        a%=ADD(phy%,ADD(t160&(ADD(yb&,l&)),ADD(SHL&(g1&,3),SHL&(p&,1))))
-        FOR g&=g1& TO g2&
-          CARD{a%}=0
-          ADD a%,8
-        NEXT g&
-      NEXT l&
-    ENDIF
-  NEXT p&
 RETURN
 .
 ' !>
