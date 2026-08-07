@@ -301,7 +301,6 @@ PROCEDURE quizz
       @random_pixels(pix.duree&)
     ENDSELECT
     @fadereg0 ! monte la couleur de fond une fois l'image dessinee (cf. fadeon)
-    @image.seule ! l'image complete, seule : c'est la qu'on donne les points
     ' @scrambling
     ' display answer bitmap text on 2 lines : 1 : Artist Name  2 : Music Name
     @dboff ! screen double buffer off (basic fx)
@@ -638,7 +637,6 @@ PROCEDURE menu.init
   ' Table clavier du TOS : donne l'ASCII d'un code de touche sans supposer la
   ' disposition du clavier (XBIOS 16, cf. gfaxpert). Sert a la saisie des noms.
   keytbl%=LPEEK(XBIOS(16,L:-1,L:-1,L:-1))
-  menu.mode&=0 ! 0 menu, 1 jukebox ; le reste passe par des pages plein ecran
   menu.sel&=0
   menu.go!=FALSE
   jb.no&=0
@@ -679,22 +677,13 @@ RETURN
 .
 ' !>
 PROCEDURE menu.rows
-  ' Remplit les quatre libelles selon le mode. Sept caracteres au plus,
-  ' c'est la largeur utile du cadre.
-  LOCAL i&
-  SELECT menu.mode&
-  CASE 0
-    mrow$(0)="JOUEURS"
-    mrow$(1)="SCORES"
-    mrow$(2)="REGLES"
-    mrow$(3)="JUKEBOX"
-  CASE 1
-    @menu.d2(SUCC(jb.no&))
-    mrow$(0)="JUKEBOX"
-    mrow$(1)="NO "+d2$
-    mrow$(2)=""
-    mrow$(3)="RETOUR"
-  ENDSELECT
+  ' Les quatre libelles du cadre. Sept caracteres au plus, c'est sa largeur
+  ' utile. Les quatre entrees ouvrent chacune une page plein ecran : le cadre
+  ' n'est plus qu'un lanceur, il n'a plus d'etat.
+  mrow$(0)="JOUEURS"
+  mrow$(1)="SCORES"
+  mrow$(2)="REGLES"
+  mrow$(3)="JUKEBOX"
 RETURN
 .
 ' !>
@@ -767,31 +756,12 @@ PROCEDURE menu.touche(code&)
   ' Codes releves dans gfaxpert : haut $48, bas $50, entree $1C, backspace
   ' $0E, echap $01, espace $39.
   IF code&=&H39
-    IF menu.mode&=0
-      menu.go!=TRUE
-    ELSE
-      @menu.mode(0)
-    ENDIF
+    menu.go!=TRUE
   ELSE
-    SELECT menu.mode&
-    CASE 0
-      @menu.deplacer(code&)
-      IF code&=&H1C
-        @menu.entrer
-      ENDIF
-    CASE 1
-      IF code&=&H48 AND jb.no&>0
-        DEC jb.no&
-        @menu.jouer
-      ENDIF
-      IF code&=&H50 AND jb.no&<PRED(nb_files_max&)
-        INC jb.no&
-        @menu.jouer
-      ENDIF
-      IF code&=&H1C OR code&=&H01
-        @menu.mode(0)
-      ENDIF
-    ENDSELECT
+    @menu.deplacer(code&)
+    IF code&=&H1C
+      @menu.entrer
+    ENDIF
   ENDIF
 RETURN
 .
@@ -809,17 +779,6 @@ PROCEDURE menu.deplacer(code&)
 RETURN
 .
 ' !>
-PROCEDURE menu.mode(m&)
-  ' Change de mode et demande un repeint complet du cadre.
-  menu.mode&=m&
-  IF m&=0
-    menu.sel&=0
-  ENDIF
-  @menu.rows
-  menu.rf&=2
-RETURN
-.
-' !>
 PROCEDURE menu.entrer
   ' Validation depuis le menu principal.
   SELECT menu.sel&
@@ -830,21 +789,150 @@ PROCEDURE menu.entrer
   CASE 2
     @page.regles
   CASE 3
-    @menu.mode(1)
-    @menu.jouer
+    @page.jukebox
   ENDSELECT
 RETURN
 .
 ' !>
-PROCEDURE menu.jouer
+PROCEDURE jb.jouer
   ' Charge et lance le morceau choisi. tune% est le tampon de la musique
   ' d'intro : elle est perdue, mais @quizz recharge un morceau a chaque tour,
   ' donc rien a remettre en place au demarrage du quizz.
   @sndh.off
   BLOAD sndh_fname$(jb.no&),tune%
   @sndh(tune%)
-  @menu.rows
-  menu.rf&=2
+RETURN
+.
+' !>
+PROCEDURE page.jukebox
+  ' Ecran complet du jukebox. Le cadre de l'accueil ne montrait qu'un numero
+  ' sur sept caracteres : on ne pouvait pas choisir un morceau, seulement
+  ' avancer a l'aveugle et recharger a chaque cran. Ici les trente numeros
+  ' sont a l'ecran, on se deplace sans rien charger, et ENTREE lance.
+  ' Les titres sont caches par defaut - c'est un quizz - et BACKSPACE les
+  ' revele quand l'ecran n'est vu que de l'animateur.
+  LOCAL k&,pk&,fini!
+  fini!=FALSE
+  jb.titres!=FALSE
+  @page.ouvrir
+  @page.anim.on
+  @page.jbdraw
+  pk&=BYTE{&HFFFC02}
+  REPEAT
+    VSYNC
+    @page.anim.step
+    @page.jbvu
+    k&=BYTE{&HFFFC02}
+    IF k&<>pk&
+      pk&=k&
+      IF k&<128
+        SELECT k&
+        CASE &H48
+          IF jb.no&>0
+            DEC jb.no&
+            @page.jbdraw
+          ENDIF
+        CASE &H50
+          IF jb.no&<PRED(nb_files_max&)
+            INC jb.no&
+            @page.jbdraw
+          ENDIF
+        CASE &H4B
+          SUB jb.no&,10
+          IF jb.no&<0
+            jb.no&=0
+          ENDIF
+          @page.jbdraw
+        CASE &H4D
+          ADD jb.no&,10
+          IF jb.no&>PRED(nb_files_max&)
+            jb.no&=PRED(nb_files_max&)
+          ENDIF
+          @page.jbdraw
+        CASE &H1C
+          @jb.jouer
+          pk&=BYTE{&HFFFC02} ! le BLOAD a pu durer plus que l'appui
+        CASE &HE
+          jb.titres!=NOT jb.titres!
+          @page.jbdraw
+        CASE &H39
+          fini!=TRUE
+        CASE &H01
+          fini!=TRUE
+        ENDSELECT
+      ENDIF
+    ENDIF
+  UNTIL fini!
+  @wait.release
+  @page.anim.off
+  @page.fermer
+RETURN
+.
+' !>
+PROCEDURE page.jbdraw
+  ' Tout sauf la bande du VU-metre. Appelee quand la selection change, pas a
+  ' chaque trame : trente numeros font trente paires de RC_COPY.
+  ' Grille de 10 par 3, un numero tous les 24 pixels a partir de x 44, ce qui
+  ' centre les 232 pixels utiles. Le repere est un trait de 16 pixels pose
+  ' sous le numero choisi.
+  LOCAL i&,r&,c&,y&,x&,t$
+  RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
+  @page.ligne("JUKEBOX",4,TRUE)
+  @menu.d2(SUCC(jb.no&))
+  @page.ligne("MORCEAU "+d2$,20,TRUE)
+  IF jb.titres!
+    @page.ligne(answer2$(jb.no&),32,TRUE)
+  ELSE
+    @page.ligne("- - - - - - -",32,TRUE)
+  ENDIF
+  FOR r&=0 TO 2
+    t$=""
+    FOR c&=0 TO 9
+      i&=ADD(MUL(r&,10),c&)
+      IF i&<nb_files_max&
+        @menu.d2(SUCC(i&))
+        t$=t$+d2$+" "
+      ELSE
+        t$=t$+"   "
+      ENDIF
+    NEXT c&
+    @menu.text(t$,44,ADD(52,MUL(r&,16)),phy%)
+  NEXT r&
+  r&=DIV(jb.no&,10)
+  c&=MOD(jb.no&,10)
+  x&=ADD(44,MUL(c&,24))
+  y&=ADD(61,MUL(r&,16))
+  DEFFILL vdicol|(3)
+  PBOX x&,y&,ADD(x&,15),SUCC(y&)
+  @page.ligne("HAUT BAS : UN   GAUCHE DROITE : DIX",158,TRUE)
+  @page.ligne("ENTREE : ECOUTER   BACKSPACE : TITRES",170,TRUE)
+  @page.ligne("ESPACE : REVENIR",182,TRUE)
+RETURN
+.
+' !>
+PROCEDURE page.jbvu
+  ' Trois barres, une par voie du YM, redessinees a chaque trame. La bande
+  ' est effacee puis repeinte ; les etoiles qui la traversent partent avec,
+  ' et @stars.step les repose ailleurs sans rien casser - il n'ecrit jamais
+  ' qu'aux deux positions qu'il connait.
+  ' XBIOS(28,0,reg) = Giaccess. 8 = voie A, 9 = B, 10 = C, bits 3-0 = niveau,
+  ' bit 4 a 1 = volume pilote par l'enveloppe, on affiche le maximum.
+  LOCAL v&,c&,h&,x&
+  RC_COPY phy%,88,102,144,46 TO phy%,88,102,0
+  DEFFILL vdicol|(3)
+  x&=88
+  FOR c&=0 TO 2
+    v&=XBIOS(28,0,ADD(8,c&))
+    IF (v& AND 16)
+      h&=15
+    ELSE
+      h&=v& AND 15
+    ENDIF
+    IF h&>0
+      PBOX x&,SUB(148,MUL(h&,3)),ADD(x&,43),147
+    ENDIF
+    ADD x&,48
+  NEXT c&
 RETURN
 .
 ' !>
@@ -886,7 +974,9 @@ PROCEDURE page.regles
   ' voix haute a ceux qui sont trop loin de l'ecran. Le scrolltext ne peut
   ' pas jouer ce role, il se merite et se rate.
   ' Une ligne = une phrase courte, 38 caracteres au plus.
+  LOCAL k&
   @page.ouvrir
+  @page.anim.on
   @page.ligne("ADN QUIZZ 2026",2,TRUE)
   @page.ligne("REGLES",16,TRUE)
   @page.ligne("LE PREMIER QUI DONNE LE TITRE",27,TRUE)
@@ -905,7 +995,13 @@ PROCEDURE page.regles
   @page.ligne("MUSIQUES YM2149 : AD ET DMA SC",170,TRUE)
   @page.ligne("INTRO : JESS",180,TRUE)
   @page.ligne("ESPACE POUR CONTINUER",192,TRUE)
-  @wait_key(&H39)
+  REPEAT
+    VSYNC
+    @page.anim.step
+    k&=BYTE{&HFFFC02}
+  UNTIL k&=&H39
+  @wait.release
+  @page.anim.off
   @page.fermer
 RETURN
 .
@@ -925,9 +1021,13 @@ PROCEDURE image.seule
   ' francais ils demandent Shift.
   ' Front montant seulement : $FFFC02 garde le dernier code, une touche
   ' maintenue distribuerait un point par trame.
-  ' Le @wait.release final n'est pas decoratif : sans lui l'espace encore
-  ' enfonce ferait sauter l'ondulation de @txt.anim dans la foulee.
+  ' Les deux @wait.release encadrent l'attente : celui du debut ignore
+  ' l'appui qui vient d'abreger l'effet de revelation, celui de la fin evite
+  ' que le meme appui ne fasse sauter l'ondulation de @txt.anim dans la
+  ' foulee. Sans eux, un espace maintenu traverserait tout d'un trait.
   LOCAL k&,pk&,fini!
+  @wait.release
+  pt.deja&=0 ! un point par joueur et par morceau, remis a plat ici
   fini!=FALSE
   pk&=BYTE{&HFFFC02}
   REPEAT
@@ -960,19 +1060,29 @@ PROCEDURE point(i&)
   ' l'ecran affiche et celui qu'ils dessinent.
   LOCAL ok!
   BMOVE phy%+29440,bandsav%,2560 ! lignes 184 a 199
-  ok!=TRUE
-  IF pj$(i&)=""
-    pj.pt&(i&)=0 ! l'invariant, au cas ou l'emplacement aurait servi avant
-    @point.nom(i&)
-    ok!=(pj$(i&)<>"")
-  ENDIF
-  IF ok!
-    IF pj.pt&(i&)<99
-      INC pj.pt&(i&)
+  IF BTST(pt.deja&,i&)
+    ' Un seul point par joueur et par morceau. Sans ce garde-fou, une touche
+    ' un peu appuyee, ou un animateur qui doute et reappuie, doublerait le
+    ' score sans que personne s'en apercoive. Les autres joueurs peuvent
+    ' toujours marquer sur le meme morceau, c'est un ex aequo, pas un doublon.
+    @point.bande(pj$(i&)+" : DEJA COMPTE")
+    @point.tenir(50)
+  ELSE
+    ok!=TRUE
+    IF pj$(i&)=""
+      pj.pt&(i&)=0 ! l'invariant, au cas ou l'emplacement aurait servi avant
+      @point.nom(i&)
+      ok!=(pj$(i&)<>"")
     ENDIF
-    @menu.d2(pj.pt&(i&))
-    @point.bande(pj$(i&)+" : "+d2$)
-    @point.tenir(75) ! une seconde et demie
+    IF ok!
+      IF pj.pt&(i&)<99
+        INC pj.pt&(i&)
+      ENDIF
+      pt.deja&=BSET(pt.deja&,i&)
+      @menu.d2(pj.pt&(i&))
+      @point.bande(pj$(i&)+" : "+d2$)
+      @point.tenir(75) ! une seconde et demie
+    ENDIF
   ENDIF
   BMOVE bandsav%,phy%+29440,2560
 RETURN
@@ -1215,19 +1325,14 @@ PROCEDURE page.scores
   ' battement de cil a l'entree et un a la sortie.
   LOCAL k&,pk&,fini!
   @scores.fusion
-  recolor_font(3)
   @page.ouvrir
+  @page.anim.on
   @page.scliste
-  @stars.init
-  @scores.palfixe
-  sc.teinte&=0
   fini!=FALSE
   pk&=BYTE{&HFFFC02}
   REPEAT
     VSYNC
-    @stars.step
-    sc.teinte&=AND(SUCC(sc.teinte&),255)
-    @scores.teinte
+    @page.anim.step
     k&=BYTE{&HFFFC02}
     IF k&<>pk&
       pk&=k&
@@ -1250,8 +1355,7 @@ PROCEDURE page.scores
     @page.ligne("ENREGISTREMENT IMPOSSIBLE",192,TRUE)
     @point.tenir(100)
   ENDIF
-  recolor_font(ink_col&)
-  ~XBIOS(6,L:pal%) ! la palette de l'image d'intro reprend ses droits
+  @page.anim.off
   @page.fermer
 RETURN
 .
@@ -1281,23 +1385,45 @@ PROCEDURE scores.fusion
 RETURN
 .
 ' !>
-PROCEDURE scores.palfixe
-  ' Registres fixes de la page : le noir et les trois profondeurs d'etoiles.
-  ' Les etoiles n'allument que les plans 2 et 3, elles valent donc 4, 8 ou 12
-  ' sur fond noir.
+PROCEDURE page.anim.on
+  ' Prepare une page animee. La fonte est repeinte en couleur 3, donc dans
+  ' les plans 0 et 1 ; les etoiles n'allument que les plans 2 et 3. Une
+  ' etoile qui passe sur une lettre ne peut donc pas l'abimer et il n'y a
+  ' rien a redessiner - c'est ce qui rend l'animation gratuite sur un ecran
+  ' en simple tampon.
+  ' Palette : 0 le noir, 4 / 8 / 12 les trois profondeurs d'etoile, et
+  ' 3 / 7 / 11 / 15 la couleur du texte. Ces trois derniers sont les
+  ' combinaisons "texte + etoile" : leur donner la couleur du texte fait
+  ' passer les lettres devant le champ.
+  ' A appeler APRES @page.ouvrir et AVANT de dessiner quoi que ce soit.
+  recolor_font(3)
   SETCOLOR 0,0,0,0
   SETCOLOR 4,2,2,3
   SETCOLOR 8,4,4,5
   SETCOLOR 12,7,7,7
+  @stars.init
+  sc.teinte&=0
 RETURN
 .
 ' !>
-PROCEDURE scores.teinte
-  ' Le texte respire, de l'ambre au blanc chaud. Les registres 7, 11 et 15
-  ' sont le texte AVEC une etoile derriere : ils prennent la meme couleur,
-  ' ce qui fait passer les lettres devant le champ d'etoiles.
-  ' La table sinus est celle de la croche, dimensionnee par @note3d.init qui
-  ' tourne avant tout menu.
+PROCEDURE page.anim.step
+  ' Une trame d'animation de page.
+  @stars.step
+  sc.teinte&=AND(SUCC(sc.teinte&),255)
+  @page.teinte
+RETURN
+.
+' !>
+PROCEDURE page.anim.off
+  ' Rend la fonte et la palette au reste du programme.
+  recolor_font(ink_col&)
+  ~XBIOS(6,L:pal%)
+RETURN
+.
+' !>
+PROCEDURE page.teinte
+  ' Le texte respire, de l'ambre au blanc chaud. La table sinus est celle de
+  ' la croche, dimensionnee par @note3d.init qui tourne avant tout menu.
   LOCAL c&
   c&=ADD(4,SHR&(ADD(n3sin&(sc.teinte&),128),6)) ! 4 a 7
   SETCOLOR 3,7,c&,SHR&(c&,1)
@@ -2396,12 +2522,10 @@ RETURN
 ' !>
 PROCEDURE answer_display(answer1$,answer2$)
   txt.vague&=1 ! artiste et titre en texte ondule
-  @wait.release ! ne pas reagir a l'appui qui vient d'abreger l'effet
-  REPEAT
-    matouche&=BYTE{&HFFFC02}
-    VSYNC
-  UNTIL matouche&=&H39 ! IF SPACE PRESSED
-  @wait.release
+  ' L'image complete reste seule a l'ecran jusqu'a l'espace. Cette attente
+  ' existait deja ici ; elle porte maintenant l'attribution des points, sans
+  ' rien changer au nombre d'appuis - cf. @image.seule.
+  @image.seule
   ' bg_erase! a FALSE : le masque REPLACE force deja chaque cellule 8x8 a la
   ' couleur 0, le bandeau ne couvrait plus que le lisere de 2 pixels autour.
   display.bitmap.txt(answer1$,32,130,TRUE,FALSE,TRUE)
