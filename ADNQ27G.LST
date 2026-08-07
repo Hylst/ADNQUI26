@@ -917,7 +917,7 @@ PROCEDURE page.jbdraw
         t$=t$+"   "
       ENDIF
     NEXT c&
-    @menu.text(t$,44,ADD(52,MUL(r&,16)),phy%)
+    @page.txt(t$,44,ADD(52,MUL(r&,16)))
   NEXT r&
   r&=DIV(jb.no&,10)
   c&=MOD(jb.no&,10)
@@ -995,6 +995,20 @@ PROCEDURE page.fermer
   BMOVE pic%,phy%,32000
   menu.pk&=BYTE{&HFFFC02}
   menu.rf&=2 ! le cadre du menu vient d'etre efface, il faut le reposer
+RETURN
+.
+' !>
+PROCEDURE page.txt(t$,xb&,yb&)
+  ' Texte a une abscisse libre, dans la couleur pg.col&. @page.ligne ne sait
+  ' que centrer ou caler a gauche ; la grille du jukebox a besoin d'autre
+  ' chose. Sans la teinture, le texte resterait en 15 : invisible a l'oeil
+  ' puisque 15 est le miroir de 7, mais une etoile qui passe dessus en
+  ' effacant le plan 3 le ferait basculer en 7 - autant le poser tout de
+  ' suite dans la bonne couleur.
+  @menu.text(t$,xb&,yb&,phy%)
+  IF pg.col&<15 AND LEN(t$)>0
+    @page.teindre(xb&,yb&,LEN(t$),pg.col&)
+  ENDIF
 RETURN
 .
 ' !>
@@ -1375,7 +1389,6 @@ PROCEDURE page.scores
   @scores.fusion
   @page.ouvrir
   @page.anim.on
-  @page.col(7,7,7,5) ! creme fixe pour le titre et les pieds de page
   @cyc.init
   @page.scliste
   fini!=FALSE
@@ -1457,11 +1470,15 @@ PROCEDURE page.anim.on
   IF ink_col&<>15
     recolor_font(15)
   ENDIF
+  ' Le registre 7 est la couleur de texte par defaut : sans lui, une page qui
+  ' ne pose pas sa palette garderait celle de l'image d'intro, ou le 7 est un
+  ' gris-bleu terne. Les pages qui veulent autre chose reposent par-dessus.
   pg.col&=7
   SETCOLOR 0,0,0,0
-  @page.col(8,4,4,5)
+  @page.col(7,7,7,5) ! creme, le texte
+  @page.col(8,4,4,5) ! l'etoile
+  pg.ph&=0
   @stars.init
-  sc.teinte&=0
 RETURN
 .
 ' !>
@@ -1477,9 +1494,18 @@ RETURN
 .
 ' !>
 PROCEDURE page.anim.step
-  ' Une trame d'animation de page. Le cyclage des couleurs est a la charge
-  ' de la page : toutes n'en veulent pas.
+  ' Une trame d'animation de page : le champ d'etoiles, et la respiration du
+  ' registre 7. Toutes les pages en profitent, y compris celles qui ne
+  ' cyclent pas - c'est ce qui empeche les regles et le jukebox d'etre
+  ' completement figes. Le cyclage de la rampe, lui, reste a la charge de la
+  ' page : toutes n'en veulent pas.
+  ' Un tour de sinus en 256 trames, soit cinq secondes : assez lent pour
+  ' qu'on lise sans etre distrait.
+  LOCAL c&
   @stars.step
+  pg.ph&=AND(SUCC(pg.ph&),255)
+  c&=ADD(4,SHR&(ADD(n3sin&(pg.ph&),128),6)) ! 4 a 7
+  @page.col(7,7,c&,SHR&(c&,1))
 RETURN
 .
 ' !>
@@ -1653,7 +1679,6 @@ PROCEDURE page.scliste
   IF n&=0
     @page.ligne("AUCUN JOUEUR ENREGISTRE",90,TRUE)
   ENDIF
-  sc.nb&=n&
   @page.ligne("LES POINTS SE DONNENT AVEC F1 A F10",162,TRUE)
   @page.ligne("UNE FOIS L IMAGE DEVOILEE EN ENTIER",172,TRUE)
   @page.ligne("BACKSPACE : TOUT REMETTRE A ZERO",182,TRUE)
