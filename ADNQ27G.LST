@@ -649,10 +649,24 @@ PROCEDURE menu.init
   ' Etat clavier de depart : sans cela un code deja present serait pris pour
   ' un appui des la premiere trame.
   menu.pk&=BYTE{&HFFFC02}
-  pt.pk&=menu.pk& ! meme precaution pour les touches de fonction du quizz
+  pt.pk&=menu.pk&
+  sai.max&=8 ! huit lettres, c'est ce qui tient dans les colonnes des pages ! meme precaution pour les touches de fonction du quizz
   @menu.rows
   menu.rf&=2
   menu.rc&=0
+RETURN
+.
+' !>
+PROCEDURE menu.ftouche(i&)
+  ' Libelle de la touche de fonction de l'emplacement i&, cale sur quatre
+  ' caracteres pour que les colonnes restent alignees. C'est la meilleure
+  ' documentation possible du systeme de points : le joueur voit la touche
+  ' a cote de son nom, il n'y a rien a retenir.
+  IF i&<9
+    ft$="F"+MID$(chif$,ADD(i&,2),1)+"  "
+  ELSE
+    ft$="F10 "
+  ENDIF
 RETURN
 .
 ' !>
@@ -883,13 +897,13 @@ PROCEDURE page.regles
   @page.ligne("BACKSPACE : MORCEAU PRECEDENT",94,TRUE)
   @page.ligne("FLECHES ET ENTREE : MENU D ACCUEIL",104,TRUE)
   @page.ligne("F1 A F10 : POINT AU JOUEUR 1 A 10",114,TRUE)
-  @page.ligne("SI LE JOUEUR EST INCONNU, ON DEMANDE",124,TRUE)
-  @page.ligne("SON NOM AVANT DE COMPTER LE POINT",134,TRUE)
-  @page.ligne("CREDITS",149,TRUE)
-  @page.ligne("CODE ET FONTES : HYLST",161,TRUE)
-  @page.ligne("MUSIQUES YM2149 : AD ET DMA SC",171,TRUE)
-  @page.ligne("INTRO : JESS",181,TRUE)
-  @page.ligne("ESPACE POUR CONTINUER",191,TRUE)
+  @page.ligne("NOM DEMANDE SI LE JOUEUR EST INCONNU",124,TRUE)
+  @page.ligne("ECRAN FINAL : TAPEZ LE NOM DU GAGNANT",134,TRUE)
+  @page.ligne("CREDITS",148,TRUE)
+  @page.ligne("CODE ET FONTES : HYLST",160,TRUE)
+  @page.ligne("MUSIQUES YM2149 : AD ET DMA SC",170,TRUE)
+  @page.ligne("INTRO : JESS",180,TRUE)
+  @page.ligne("ESPACE POUR CONTINUER",192,TRUE)
   @wait_key(&H39)
   @page.fermer
 RETURN
@@ -909,6 +923,7 @@ PROCEDURE point(i&)
   BMOVE phy%+29440,bandsav%,2560 ! lignes 184 a 199
   ok!=TRUE
   IF pj$(i&)=""
+    pj.pt&(i&)=0 ! l'invariant, au cas ou l'emplacement aurait servi avant
     @point.nom(i&)
     ok!=(pj$(i&)<>"")
   ENDIF
@@ -1032,11 +1047,11 @@ PROCEDURE page.pjliste(s&)
   @page.ligne("JOUEURS",12,TRUE)
   FOR i&=0 TO 9
     y&=ADD(30,MUL(i&,13))
-    @menu.d2(SUCC(i&))
+    @menu.ftouche(i&)
     IF pj$(i&)=""
-      @page.ligne(d2$+"  -",y&,FALSE)
+      @page.ligne(ft$+"-",y&,FALSE)
     ELSE
-      @page.ligne(d2$+"  "+pj$(i&),y&,FALSE)
+      @page.ligne(ft$+pj$(i&),y&,FALSE)
     ENDIF
   NEXT i&
   DEFFILL vdicol|(ink_col&)
@@ -1044,10 +1059,10 @@ PROCEDURE page.pjliste(s&)
   PBOX 0,y&,4,ADD(y&,4)
   ' On rappelle ici a quoi servent ces noms : la page des joueurs est le seul
   ' endroit ou l'on vient avant la partie, c'est donc la qu'il faut le dire.
-  @page.ligne("PENDANT LE QUIZZ, F1 A F10 DONNENT",162,TRUE)
-  @page.ligne("UN POINT AU JOUEUR CORRESPONDANT",172,TRUE)
-  @page.ligne("FLECHES : CHOISIR   ENTREE : NOMMER",182,TRUE)
-  @page.ligne("ESPACE : REVENIR",192,TRUE)
+  @page.ligne("LA TOUCHE F DONNE LE POINT",160,TRUE)
+  @page.ligne("NOM VIDE : EMPLACEMENT LIBERE",170,TRUE)
+  @page.ligne("FLECHES : CHOISIR   ENTREE : NOMMER",180,TRUE)
+  @page.ligne("ESPACE : REVENIR",190,TRUE)
 RETURN
 .
 ' !>
@@ -1069,6 +1084,14 @@ PROCEDURE page.saisie(s&)
       IF k&<128
         SELECT k&
         CASE &H1C
+          ' Invariant tenu partout : un emplacement sans nom a zero point.
+          ' Vider le nom est donc la facon de rendre l'emplacement, et le
+          ' suivant qui s'y installe ne recupere pas les points du precedent.
+          ' Corriger une faute de frappe garde les points, c'est le cas
+          ' courant ; pour changer de personne, vider puis retaper.
+          IF sai$=""
+            pj.pt&(s&)=0
+          ENDIF
           pj$(s&)=sai$
           fini!=TRUE
         CASE &H01
@@ -1093,7 +1116,7 @@ PROCEDURE saisie.lettre(code&)
   ' charge de l'appelant : la saisie se fait tantot en plein ecran, tantot
   ' dans une bande de 16 lignes pendant la revelation.
   LOCAL a&
-  IF keytbl%>0 AND LEN(sai$)<8
+  IF keytbl%>0 AND LEN(sai$)<sai.max&
     a&=BYTE{keytbl%+code&}
     IF a&>=97 AND a&<=122
       SUB a&,32
@@ -1111,7 +1134,8 @@ PROCEDURE page.nom
   RC_COPY phy%,0,0,320,200 TO phy%,0,0,0
   @page.ligne("NOM DU JOUEUR",16,TRUE)
   @page.ligne(sai$+"-",92,TRUE)
-  @page.ligne("LETTRES SEULEMENT, HUIT AU PLUS",160,TRUE)
+  @page.ligne("LETTRES SEULEMENT, HUIT AU PLUS",156,TRUE)
+  @page.ligne("VIDER LE NOM LIBERE L EMPLACEMENT",168,TRUE)
   @page.ligne("ENTREE VALIDE   ESC ANNULE",184,TRUE)
 RETURN
 .
@@ -1294,8 +1318,9 @@ PROCEDURE page.scliste
     IF pj$(i&)<>""
       y&=ADD(30,MUL(n&,13))
       p$=pj$(i&)+"        "
+      @menu.ftouche(i&)
       @menu.d2(pj.pt&(i&))
-      @page.ligne(LEFT$(p$,8)+"   "+d2$,y&,FALSE)
+      @page.ligne(ft$+LEFT$(p$,8)+"   "+d2$,y&,FALSE)
       INC n&
     ENDIF
   NEXT i&
@@ -1460,7 +1485,8 @@ PROCEDURE finale
   scroll$=scroll$+"GREETINGS A JBFOU ET DIANE, QUI FONT TOURNER L'ADN PARTY "
   scroll$=scroll$+"A TANTONVILLE, ET A TOUS LES JOYEUX ATARISTES BOUT-EN-TRAIN "
   scroll$=scroll$+"QUI ONT REPONDU PRESENT.   -   "
-  scroll$=scroll$+"ESPACE POUR RENDRE LA MAIN AU BUREAU.      "
+  scroll$=scroll$+"TAPEZ LE NOM DU GAGNANT ET ESPACE POUR L'AFFICHER.   "
+  scroll$=scroll$+"ESPACE SEUL POUR RENDRE LA MAIN AU BUREAU.      "
   ' Palette propre au feu d'artifice. @clearpal a mis tous les registres a
   ' zero et le seul XBIOS(6) qui les restaurait etait dans screen.opening,
   ' desormais commente : sans cette rampe tout serait dessine noir sur noir.
@@ -1506,13 +1532,82 @@ PROCEDURE finale
   RC_COPY log%,0,0,320,200 TO log%,0,0,0
   stab
   RC_COPY log%,0,0,320,200 TO log%,0,0,0
+  ' Nom du gagnant : on tape, espace affiche. Pense pour les soirees ou le
+  ' registre des joueurs ne sert pas - une party a vingt-cinq participants ne
+  ' tient pas dans dix emplacements, et personne n'a envie de les saisir.
+  ' Seize lettres ici : il n'y a pas de colonne a respecter, contrairement
+  ' aux pages des joueurs et des scores.
+  gagnant$=""
+  sai$=""
+  sai.max&=16
+  txt.phase&=0
+  fin.sortie!=FALSE
+  gk&=BYTE{&HFFFC02}
   REPEAT
     @fx.step
     @scroll.step
+    @finale.nom
     stab ! stab fait deja son VSYNC : une trame par tour au lieu de deux
     matouche&=BYTE{&HFFFC02}
-  UNTIL matouche&=&H39
+    IF matouche&<>gk&
+      gk&=matouche&
+      IF matouche&<128
+        @finale.touche(matouche&)
+      ENDIF
+    ENDIF
+  UNTIL fin.sortie!
   @wait.release
+RETURN
+.
+' !>
+PROCEDURE finale.touche(code&)
+  ' Espace fait deux choses selon l'etat : il valide le nom en cours de
+  ' frappe, ou, si rien n'est tape, il rend la main au bureau. Pour qui ne se
+  ' sert pas de l'annonce, l'ecran final se comporte donc comme avant.
+  ' ESC efface tout, saisie comme gagnant affiche.
+  SELECT code&
+  CASE &H39
+    IF LEN(sai$)>0
+      gagnant$=sai$
+      sai$=""
+    ELSE
+      fin.sortie!=TRUE
+    ENDIF
+  CASE &HE
+    IF LEN(sai$)>0
+      sai$=LEFT$(sai$,PRED(LEN(sai$)))
+    ENDIF
+  CASE &H01
+    sai$=""
+    gagnant$=""
+  DEFAULT
+    @saisie.lettre(code&)
+  ENDSELECT
+RETURN
+.
+' !>
+PROCEDURE finale.nom
+  ' Bande centrale de l'ecran final, sur l'ondulation de @txt.ligne. Rien
+  ' tant qu'on n'a pas tape ; la premiere lettre fait apparaitre l'invite.
+  ' La bande est effacee puis redessinee a chaque trame, donc les deux
+  ' tampons de stab recoivent la meme chose. Le feu d'artifice passe avant :
+  ' ses particules sont posees, le texte se dessine par-dessus, et
+  ' l'effacement de la trame suivante remet tout a plat - l'effacement cible
+  ' de @fx.step qui retomberait dans la bande ne fait alors que reecrire du
+  ' noir sur du noir.
+  ' La phase est bornee a 15 : la table sinus n'en a pas plus, et un
+  ' compteur libre finirait par deborder du mot sur un ecran laisse allume.
+  IF LEN(gagnant$)>0 OR LEN(sai$)>0
+    RC_COPY log%,0,86,320,36 TO log%,0,86,0
+    txt.phase&=AND(SUCC(txt.phase&),15)
+    IF LEN(sai$)>0
+      @txt.ligne("TAPEZ LE NOM DU GAGNANT",92,1,0)
+      @txt.ligne(sai$+"-",110,2,8)
+    ELSE
+      @txt.ligne("LE GAGNANT EST",92,1,0)
+      @txt.ligne(gagnant$,110,2,8)
+    ENDIF
+  ENDIF
 RETURN
 .
 ' !>
